@@ -1,0 +1,19 @@
+# Changelog
+
+All notable changes to this project are documented here. The format is based on
+[Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to
+[Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+## [Unreleased]
+
+### Added
+- M0 scaffold: maintainer agent with a fixed `solve()` entrypoint (philosophy → plan →
+  decide → implement) and an OpenAI-compatible managed-inference client with an offline mode.
+- Time-travel replay benchmark: freeze a repo at a point in time, generate tasks from git
+  history, and score plans with a pairwise LLM judge.
+- Open-source project scaffolding: license, contributing guide, code of conduct, security
+  policy, issue/PR templates, and CI.
+
+## [0.0.1] - 2026-07-01
+
+- Initial project structure.

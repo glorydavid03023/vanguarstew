@@ -6,16 +6,44 @@ build-backend = "setuptools.build_meta"
 name = "vanguarstew"
 version = "0.0.1"
 description = "A general repository-maintainer agent and its GitHub-history replay benchmark."
+readme = "README.md"
 requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "gittensor-vanguard" }]
+keywords = ["bittensor", "gittensor", "agent", "maintainer", "benchmark", "llm"]
+classifiers = [
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Intended Audience :: Developers",
+    "Topic :: Software Development :: Quality Assurance",
+]
 dependencies = []
 
 [project.optional-dependencies]
-dev = ["pytest>=7"]
+dev = ["pytest>=7", "ruff>=0.4"]
+
+[project.urls]
+Homepage = "https://github.com/gittensor-vanguard/vanguarstew"
+Repository = "https://github.com/gittensor-vanguard/vanguarstew"
+Issues = "https://github.com/gittensor-vanguard/vanguarstew/issues"
 
 [tool.setuptools]
-py-modules = ["agent"]
 packages = ["agent", "benchmark"]
 
 [tool.pytest.ini_options]
 addopts = "-q"
 testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "I"]
+ignore = ["E501"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["E402"]
