@@ -1,6 +1,6 @@
-# steward — a general repository-maintainer agent
+# vanguarstew — a general repository-maintainer agent
 
-`steward` is a **general repository-maintainer agent** and the **benchmark** that optimizes it, built to live as a repo on gittensor. It borrows the agentic-workflow + history-derived-benchmark approach of SN66 "ninja" (the coding-agent subnet) and retargets it from *"reproduce the code change"* to *"make the maintainer decisions a strong maintainer would have made."*
+`vanguarstew` is a **general repository-maintainer agent** and the **benchmark** that optimizes it, built to live as a repo on gittensor. It borrows the agentic-workflow + history-derived-benchmark approach of SN66 "ninja" (the coding-agent subnet) and retargets it from *"reproduce the code change"* to *"make the maintainer decisions a strong maintainer would have made."*
 
 The core question it answers is not *"did the agent write good code?"* but *"does the agent understand where this repository is going, and would it have steered it the way the real maintainers did?"*
 
@@ -35,21 +35,21 @@ benchmark/             the evaluation harness (validator-owned; miners don't edi
   score.py             objective scoring of concrete decisions
   runner.py            orchestrate the replay eval, tally decisive wins
 scripts/run_eval.py    CLI to run an end-to-end replay
-steward_agent_files.json   manifest of miner-editable files (mirrors tau)
+vanguarstew_agent_files.json   manifest of miner-editable files (mirrors tau)
 ```
 
 ## Quickstart
 
 ```bash
 # offline dry-run: no network, deterministic stub LLM — proves the loop wiring
-STEWARD_OFFLINE=1 python -m scripts.run_eval --repo /path/to/some/git/repo --tasks 2 --horizon 5
+VANGUARSTEW_OFFLINE=1 python -m scripts.run_eval --repo /path/to/some/git/repo --tasks 2 --horizon 5
 
 # live run against a managed-inference endpoint (ninja-style contract)
 python -m scripts.run_eval --repo /path/to/repo --tasks 5 --horizon 5 \
-    --model claude-sonnet-4.6 --api-base http://validator-proxy/v1 --api-key "$TOKEN"
+    --model <validator-model> --api-base http://validator-proxy/v1 --api-key "$TOKEN"
 
 # smoke test (no network, no git needed)
-STEWARD_OFFLINE=1 python -m pytest -q
+VANGUARSTEW_OFFLINE=1 python -m pytest -q
 ```
 
 ## Status
@@ -62,7 +62,7 @@ The harness invokes the agent with a fixed signature (generalized from ninja's `
 
 ```python
 solve(
-    repo_path="/tmp/task_repo",        # frozen repo state at time T (+ .steward_context.json)
+    repo_path="/tmp/task_repo",        # frozen repo state at time T (+ .vanguarstew_context.json)
     request="plan next 5 actions",     # the maintainer decision being asked for
     model="validator-managed-model",
     api_base="http://validator-proxy/v1",
@@ -76,5 +76,3 @@ solve(
     "logs": "...", "steps": 0, "cost": None, "success": True,
 }
 ```
-
-Name is a working title; easy to change.

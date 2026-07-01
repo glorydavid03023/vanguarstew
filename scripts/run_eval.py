@@ -1,6 +1,6 @@
 """CLI: run an end-to-end time-travel replay eval.
 
-  STEWARD_OFFLINE=1 python -m scripts.run_eval --repo /path/to/git/repo --tasks 2 --horizon 5
+  VANGUARSTEW_OFFLINE=1 python -m scripts.run_eval --repo /path/to/git/repo --tasks 2 --horizon 5
 """
 
 from __future__ import annotations
@@ -12,7 +12,7 @@ from benchmark.runner import run_replay
 
 
 def main() -> None:
-    ap = argparse.ArgumentParser(description="steward time-travel replay eval")
+    ap = argparse.ArgumentParser(description="vanguarstew time-travel replay eval")
     ap.add_argument("--repo", required=True, help="path to a local git repo to replay")
     ap.add_argument("--agent", default="agent.py", help="agent entrypoint file")
     ap.add_argument("--tasks", type=int, default=3)

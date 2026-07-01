@@ -1,4 +1,4 @@
-# Roadmap & Milestones — steward (repository-maintainer agent)
+# Roadmap & Milestones — vanguarstew (repository-maintainer agent)
 
 Goal: a general repository-maintainer agent, optimized against a benchmark derived from real GitHub history, mature enough to run fully agentic on gittensor (the way SN66 "ninja" runs for coding). Each milestone has a concrete **deliverable** and an **acceptance test** — done means the acceptance test passes, not "looks done."
 
@@ -10,11 +10,11 @@ Timeline is staged deliberately: a working loop in days, a defensible competitiv
 
 The agent runs and returns a well-formed maintainer decision.
 
-- Repo scaffold, packaging, manifest (`steward_agent_files.json`).
+- Repo scaffold, packaging, manifest (`vanguarstew_agent_files.json`).
 - Base agent with the fixed `solve(repo_path, request, ...)` entrypoint.
 - Agent workflow wired: **infer philosophy → read situation → plan/decide → implement-if-needed**.
 - OpenAI-compatible LLM client honoring the managed-inference contract (`api_base`/`api_key`/`model`), plus an offline stub for deterministic dry-runs.
-- **Acceptance:** `STEWARD_OFFLINE=1 python -m pytest -q` passes; `solve()` on a frozen repo returns a decision with `philosophy`, `plan`, `action`, `rationale`.
+- **Acceptance:** `VANGUARSTEW_OFFLINE=1 python -m pytest -q` passes; `solve()` on a frozen repo returns a decision with `philosophy`, `plan`, `action`, `rationale`.
 
 ## M1 — Time-travel replay harness  ·  *target: ~1 week*
 

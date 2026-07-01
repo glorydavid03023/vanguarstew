@@ -1,4 +1,4 @@
-"""steward maintainer agent — fixed entrypoint.
+"""vanguarstew maintainer agent — fixed entrypoint.
 
 The benchmark imports `solve` and invokes it with a frozen repo and a managed-inference
 endpoint, exactly as ninja invokes its coding agent. Miners edit the agent/ package and

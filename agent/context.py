@@ -1,6 +1,6 @@
 """Load the frozen, knowable-at-T repository context that the agent reasons over.
 
-The benchmark freezes a repo at commit T and writes `.steward_context.json` into the
+The benchmark freezes a repo at commit T and writes `.vanguarstew_context.json` into the
 checkout (the GitHub-derived state: issues, PRs, releases, etc. — only what was knowable
 at T). If that file is absent, we fall back to what git alone can tell us (commits up to
 T, tags as releases, the README). The agent must never look past T.
@@ -12,7 +12,7 @@ import json
 import os
 import subprocess
 
-CONTEXT_FILE = ".steward_context.json"
+CONTEXT_FILE = ".vanguarstew_context.json"
 
 
 def _git(repo_path, *args):

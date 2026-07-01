@@ -2,7 +2,7 @@
 
 The validator supplies `model`, `api_base`, and `api_key`; the agent must use only
 those (no third-party keys, no overridden sampling) — same rule as ninja. An offline
-stub mode (STEWARD_OFFLINE=1, or api_key == "offline", or no api_base) returns a
+stub mode (VANGUARSTEW_OFFLINE=1, or api_key == "offline", or no api_base) returns a
 caller-supplied deterministic stub so the loop can be exercised without a network.
 """
 
@@ -22,7 +22,7 @@ class LLM:
         env_timeout = os.environ.get("TAU_AGENT_TIMEOUT_SECONDS")
         self.timeout = float(timeout or env_timeout or 120)
         self.offline = (
-            os.environ.get("STEWARD_OFFLINE") == "1"
+            os.environ.get("VANGUARSTEW_OFFLINE") == "1"
             or not self.api_base
             or self.api_key == "offline"
         )

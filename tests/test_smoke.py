@@ -1,6 +1,6 @@
 """Smoke tests — offline, prove the loop wiring without network. Run:
 
-    STEWARD_OFFLINE=1 python -m pytest -q
+    VANGUARSTEW_OFFLINE=1 python -m pytest -q
 """
 
 import json
@@ -16,7 +16,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if ROOT not in sys.path:
     sys.path.insert(0, ROOT)
 
-os.environ["STEWARD_OFFLINE"] = "1"
+os.environ["VANGUARSTEW_OFFLINE"] = "1"
 
 from agent.llm import extract_json  # noqa: E402
 from benchmark.runner import load_solve, run_replay  # noqa: E402
@@ -30,7 +30,7 @@ def test_extract_json():
 def test_solve_offline_returns_decision():
     d = tempfile.mkdtemp()
     try:
-        with open(os.path.join(d, ".steward_context.json"), "w", encoding="utf-8") as f:
+        with open(os.path.join(d, ".vanguarstew_context.json"), "w", encoding="utf-8") as f:
             json.dump({
                 "frozen_at": {"commit": "abc"},
                 "recent_commits": [{"sha": "1", "subject": "init"}],

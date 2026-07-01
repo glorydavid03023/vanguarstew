@@ -25,7 +25,7 @@ def load_solve(agent_file: str = "agent.py"):
     root = os.path.dirname(os.path.abspath(agent_file))
     if root not in sys.path:
         sys.path.insert(0, root)
-    spec = importlib.util.spec_from_file_location("steward_entry", agent_file)
+    spec = importlib.util.spec_from_file_location("vanguarstew_entry", agent_file)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module.solve
@@ -47,7 +47,7 @@ def run_replay(repo_path, agent_file="agent.py", n_tasks=3, horizon=5,
     rng = random.Random(seed)
     tally = {"challenger": 0, "baseline": 0, "tie": 0}
     rows = []
-    base = work_dir or tempfile.mkdtemp(prefix="steward_work_")
+    base = work_dir or tempfile.mkdtemp(prefix="vanguarstew_work_")
     try:
         for k, task in enumerate(tasks):
             dest = os.path.join(base, f"task_{k}")

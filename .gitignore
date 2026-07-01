@@ -6,6 +6,6 @@ build/
 dist/
 .venv/
 venv/
-.steward_work/
+.vanguarstew_work/
 .tasks/
 *.log

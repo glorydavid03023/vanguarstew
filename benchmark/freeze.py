@@ -1,6 +1,6 @@
 """Freeze a repo at commit T and build the leakage-safe, knowable-at-T context.
 
-We export the working tree at T and write `.steward_context.json` alongside it, derived
+We export the working tree at T and write `.vanguarstew_context.json` alongside it, derived
 only from history up to and including T (commits, tags-as-releases, README). The agent
 reads that — it never sees anything after T.
 """
