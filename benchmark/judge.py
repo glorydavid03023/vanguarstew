@@ -128,6 +128,52 @@ def _judge_order(context: dict, first, second, revealed, llm) -> str:
     return {"A": "first", "B": "second"}.get(w, "tie")
 
 
+# Per-task order-agreement categories reported by `judge_verbose`:
+#   'agree'    — both presentation orders picked the same decisive winner (a confident verdict)
+#   'disagree' — the two orders differed (position-sensitive), so dual-order returned a tie
+#   'tie'      — both orders independently said tie (genuine parity)
+#   'single'   — single-order mode (no swap check was run)
+#   'offline'  — deterministic offline stand-in (no LLM calls)
+_DUAL_ORDER_CATEGORIES = ("agree", "disagree", "tie")
+
+
+def judge_verbose(context: dict, submission_a, submission_b, revealed, llm, rng=None,
+                  dual_order: bool = True) -> tuple:
+    """Like :func:`pairwise_judge`, but also return an order-agreement category.
+
+    Returns ``(winner, category)`` where ``winner`` is 'A'/'B'/'tie' and ``category`` is one
+    of the values documented on ``_DUAL_ORDER_CATEGORIES`` (plus 'single'/'offline'). The
+    category lets callers track how often the two orders disagreed — a direct read on judge
+    stability vs. genuine model parity.
+    """
+    rng = rng or random.Random(0)
+
+    if llm.offline:
+        ra, rb = _offline_rank(submission_a), _offline_rank(submission_b)
+        return ("A" if ra > rb else ("B" if rb > ra else "tie")), "offline"
+
+    if dual_order:
+        # A shown first: 'first'->A, 'second'->B. B shown first: 'first'->B, 'second'->A.
+        v_ab = _judge_order(context, submission_a, submission_b, revealed, llm)
+        w_ab = {"first": "A", "second": "B"}.get(v_ab, "tie")
+        v_ba = _judge_order(context, submission_b, submission_a, revealed, llm)
+        w_ba = {"first": "B", "second": "A"}.get(v_ba, "tie")
+        if w_ab == w_ba and w_ab in ("A", "B"):
+            return w_ab, "agree"          # consistent decisive winner
+        if w_ab == "tie" and w_ba == "tie":
+            return "tie", "tie"           # both orders independently a tie
+        return "tie", "disagree"          # order changed the verdict -> resolve to tie
+
+    swap = rng.random() < 0.5  # if True, submission_b is shown FIRST
+    first, second = (submission_b, submission_a) if swap else (submission_a, submission_b)
+    v = _judge_order(context, first, second, revealed, llm)
+    if v == "tie":
+        return "tie", "single"
+    winner_is_first = v == "first"
+    first_is_a = not swap
+    return ("A" if winner_is_first == first_is_a else "B"), "single"
+
+
 def pairwise_judge(context: dict, submission_a, submission_b, revealed, llm, rng=None,
                    dual_order: bool = True) -> str:
     """Return 'A' (submission_a wins), 'B' (submission_b wins), or 'tie'.
@@ -137,26 +183,19 @@ def pairwise_judge(context: dict, submission_a, submission_b, revealed, llm, rng
     submission is shown first then resolves to a tie instead of a spurious win. With
     ``dual_order=False`` a single randomized-order call is made (cheaper, higher variance).
     """
-    rng = rng or random.Random(0)
+    return judge_verbose(context, submission_a, submission_b, revealed, llm, rng, dual_order)[0]
 
-    if llm.offline:
-        ra, rb = _offline_rank(submission_a), _offline_rank(submission_b)
-        return "A" if ra > rb else ("B" if rb > ra else "tie")
 
-    if dual_order:
-        # A shown first: 'first'->A, 'second'->B. B shown first: 'first'->B, 'second'->A.
-        v_ab = _judge_order(context, submission_a, submission_b, revealed, llm)
-        w_ab = {"first": "A", "second": "B"}.get(v_ab, "tie")
-        v_ba = _judge_order(context, submission_b, submission_a, revealed, llm)
-        w_ba = {"first": "B", "second": "A"}.get(v_ba, "tie")
-        # Only a verdict consistent across both orders stands; otherwise it's a tie.
-        return w_ab if w_ab == w_ba and w_ab in ("A", "B") else "tie"
+def summarize_judge_orders(categories) -> dict:
+    """Aggregate per-task order-agreement categories into counts + a disagreement rate.
 
-    swap = rng.random() < 0.5  # if True, submission_b is shown FIRST
-    first, second = (submission_b, submission_a) if swap else (submission_a, submission_b)
-    v = _judge_order(context, first, second, revealed, llm)
-    if v == "tie":
-        return "tie"
-    winner_is_first = v == "first"
-    first_is_a = not swap
-    return "A" if winner_is_first == first_is_a else "B"
+    The rate is over the tasks actually judged in dual-order mode (agree+disagree+tie);
+    'single'/'offline' tasks are excluded, and the rate is None when there are none.
+    """
+    counts = {c: 0 for c in _DUAL_ORDER_CATEGORIES}
+    for c in categories or []:
+        if c in counts:
+            counts[c] += 1
+    dual_total = sum(counts.values())
+    rate = round(counts["disagree"] / dual_total, 3) if dual_total else None
+    return {**counts, "dual_order_tasks": dual_total, "disagreement_rate": rate}

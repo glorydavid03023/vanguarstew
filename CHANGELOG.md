@@ -12,6 +12,11 @@ All notable changes to this project are documented here. The format is based on
   otherwise a tie. A position-biased judge can no longer earn a spurious win, and per-task
   variance drops. Default on; opt out via `run_replay(dual_order_judge=False)` /
   `--single-order-judge`; the replay result reports `judge_dual_order` (#87).
+- Judge telemetry: dual-order runs now record whether the two presentation orders **agreed,
+  disagreed, or tied** per task (`judge_order` on each row) and aggregate a
+  `judge_order_stats` block (counts + `disagreement_rate`) in the replay result, so maintainers
+  can distinguish genuine model parity from judge instability. Offline/single-order stay
+  deterministic with no extra LLM calls (#89).
 - Planner queue reconciliation (`agent/planner.py`): a deterministic pass makes the plan honor
   the open-PR queue even when the LLM disregards it — an item that restates an open PR's work
   is down-weighted to a `triage` review item and flagged with `restates_pr`, redundant items

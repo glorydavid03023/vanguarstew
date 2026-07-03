@@ -15,7 +15,13 @@ if ROOT not in sys.path:
 os.environ["VANGUARSTEW_OFFLINE"] = "1"
 
 from agent.llm import LLM  # noqa: E402
-from benchmark.judge import _parse_winner, _plan_substance, pairwise_judge  # noqa: E402
+from benchmark.judge import (  # noqa: E402
+    _parse_winner,
+    _plan_substance,
+    judge_verbose,
+    pairwise_judge,
+    summarize_judge_orders,
+)
 
 
 class _FakeLLM:
@@ -186,3 +192,30 @@ def test_single_order_mode_makes_one_call_and_can_be_swayed():
     result = pairwise_judge({}, _GOOD, _BAD, [], llm, random.Random(1), dual_order=False)
     assert llm.calls == 1
     assert result in ("A", "B")  # a (biased) decision, not forced to tie
+
+
+def test_judge_verbose_reports_order_category():
+    # consistent winner across both orders -> "agree"
+    assert judge_verbose({}, _GOOD, _BAD, [], _FakeLLM("content")) == ("A", "agree")
+    # pure position bias -> orders disagree -> tie, flagged "disagree"
+    assert judge_verbose({}, _GOOD, _BAD, [], _FakeLLM("position_first")) == ("tie", "disagree")
+    assert judge_verbose({}, _GOOD, _BAD, [], _FakeLLM("position_second")) == ("tie", "disagree")
+    # both orders independently tie -> "tie"
+    assert judge_verbose({}, _GOOD, _BAD, [], _FakeLLM("always_tie")) == ("tie", "tie")
+    # single-order mode is categorized as "single"
+    _, cat = judge_verbose({}, _GOOD, _BAD, [], _FakeLLM("content"),
+                           random.Random(0), dual_order=False)
+    assert cat == "single"
+    # offline path is deterministic and categorized "offline"
+    assert judge_verbose({}, _GOOD, _BAD, [], LLM(api_key="offline"))[1] == "offline"
+
+
+def test_summarize_judge_orders_rate_and_exclusions():
+    stats = summarize_judge_orders(["agree", "disagree", "tie", "agree", "single", "offline"])
+    assert stats["agree"] == 2 and stats["disagree"] == 1 and stats["tie"] == 1
+    assert stats["dual_order_tasks"] == 4                 # single/offline excluded
+    assert stats["disagreement_rate"] == round(1 / 4, 3)
+    # no dual-order tasks -> rate is None, not a divide-by-zero
+    empty = summarize_judge_orders(["single", "offline"])
+    assert empty["dual_order_tasks"] == 0 and empty["disagreement_rate"] is None
+    assert summarize_judge_orders([])["disagreement_rate"] is None

@@ -72,5 +72,7 @@ def test_replay_end_to_end_offline():
         res = run_replay(d, agent_file=os.path.join(ROOT, "agent.py"), n_tasks=2, horizon=3)
         assert res.get("tasks", 0) >= 1
         assert "tally" in res and "decisive_margin" in res
+        # judge order stats are reported; offline has no dual-order tasks -> rate is None
+        assert res["judge_order_stats"]["disagreement_rate"] is None
     finally:
         shutil.rmtree(d, ignore_errors=True)
