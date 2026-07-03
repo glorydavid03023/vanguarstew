@@ -7,6 +7,10 @@ All notable changes to this project are documented here. The format is based on
 ## [Unreleased]
 
 ### Added
+- Benchmark: a second, stronger reference baseline (`heuristic`) that extrapolates recent
+  commit cadence and works the open-issue backlog, selectable via `run_replay(baseline=...)`
+  and `--baseline {empty,heuristic}`. Baselines now live in `benchmark/baselines.py` behind a
+  small registry, making the pairwise opponent explicit and the win signal more meaningful.
 - M2: GitHub issue/PR fetch now paginates back toward the freeze time T (bounded, with an
   `_issues_truncated` flag), so open-at-T reconstruction is complete regardless of how old T
   is — not just the newest page.

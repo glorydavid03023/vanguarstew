@@ -8,6 +8,7 @@ from __future__ import annotations
 import argparse
 import json
 
+from benchmark.baselines import BASELINES, DEFAULT_BASELINE
 from benchmark.runner import run_replay
 
 
@@ -28,6 +29,8 @@ def main() -> None:
                     help="draw freeze points only from the most recent usable window")
     ap.add_argument("--rotation-seed", type=int, default=None,
                     help="deterministically rotate which freeze points are chosen")
+    ap.add_argument("--baseline", default=DEFAULT_BASELINE, choices=sorted(BASELINES),
+                    help="reference opponent the challenger is judged against")
     args = ap.parse_args()
 
     result = run_replay(
@@ -35,6 +38,7 @@ def main() -> None:
         model=args.model, api_base=args.api_base, api_key=args.api_key, work_dir=args.work_dir,
         enrich_github=args.enrich, github_token=args.github_token,
         recent_bias=args.recent_bias, rotation_seed=args.rotation_seed,
+        baseline=args.baseline,
     )
     print(json.dumps(result, indent=2))
 
