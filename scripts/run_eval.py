@@ -35,6 +35,9 @@ def main() -> None:
                     help="composite weight on the pairwise judge (default 0.6)")
     ap.add_argument("--w-objective", type=float, default=0.4,
                     help="composite weight on the objective anchor (default 0.4)")
+    ap.add_argument("--single-order-judge", action="store_true",
+                    help="ask the judge one randomized order instead of both "
+                         "(cheaper, but no position-swap consistency check)")
     args = ap.parse_args()
 
     result = run_replay(
@@ -43,6 +46,7 @@ def main() -> None:
         enrich_github=args.enrich, github_token=args.github_token,
         recent_bias=args.recent_bias, rotation_seed=args.rotation_seed, baseline=args.baseline,
         w_judge=args.w_judge, w_objective=args.w_objective,
+        dual_order_judge=not args.single_order_judge,
     )
     print(json.dumps(result, indent=2))
 
