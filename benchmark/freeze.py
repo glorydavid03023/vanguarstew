@@ -51,6 +51,36 @@ def file_at(repo: str, commit: str, path: str) -> str:
     return r.stdout if r.returncode == 0 else ""
 
 
+def _commit_time(repo: str, commit: str) -> int:
+    """The freeze commit's committer time as a unix timestamp (0 if unknown)."""
+    out = _git(repo, "log", "-1", "--format=%ct", commit, check=False).strip()
+    return int(out) if out.isdigit() else 0
+
+
+def _merged_tags_at(repo: str, commit: str) -> list:
+    """Tags reachable from T *and* created no later than T, oldest -> newest by creator date.
+
+    `git tag --merged` is reachability-only, so an annotated tag created after T that points to
+    a pre-T commit (a retroactive/backport tag, a release cut later from an old commit) would
+    otherwise leak a future release into the knowable-at-T context. Filtering by creator date
+    mirrors the GitHub-API path (`published_at <= T`). Lightweight tags report their target
+    commit's date rather than a real creation time, so their post-T creation can't be detected;
+    annotated tags — the usual release-tag form — are filtered correctly.
+    """
+    frozen_at = _commit_time(repo, commit)
+    out = _git(repo, "tag", "--merged", commit, "--sort=creatordate",
+               "--format=%(refname:short)%09%(creatordate:unix)", check=False)
+    tags = []
+    for line in out.splitlines():
+        if "\t" not in line:
+            continue
+        name, created = line.split("\t", 1)
+        created = created.strip()
+        if name and created.isdigit() and int(created) <= frozen_at:
+            tags.append(name)
+    return tags
+
+
 def build_context(repo: str, commit: str, lookback: int = 50) -> dict:
     log = _git(repo, "log", "--pretty=format:%H%x09%cI%x09%s", "-n", str(lookback), commit)
     commits = []
@@ -58,13 +88,7 @@ def build_context(repo: str, commit: str, lookback: int = 50) -> dict:
         parts = line.split("\t", 2)
         if len(parts) == 3:
             commits.append({"sha": parts[0][:10], "date": parts[1], "subject": parts[2]})
-    # `git tag --merged` defaults to refname order, which is wrong for versions like
-    # v1.10.0 vs v1.9.0. Sort by creation date so `tags[-10:]` is truly the recent window.
-    tags = [
-        t
-        for t in _git(repo, "tag", "--sort=creatordate", "--merged", commit, check=False).splitlines()
-        if t
-    ]
+    tags = _merged_tags_at(repo, commit)
     readme = ""
     for name in ("README.md", "README.rst", "README", "docs/README.md"):
         content = file_at(repo, commit, name)

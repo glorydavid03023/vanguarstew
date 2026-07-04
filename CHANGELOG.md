@@ -22,6 +22,10 @@ All notable changes to this project are documented here. The format is based on
 - Leakage: `scrub_context` now scrubs forward-references in a release's `tag`, not just its
   `name`. Git-freeze releases carry only a `tag` (no `name`), so on the default offline path a
   forward-reference in a release identifier previously bypassed the leakage filter (#234).
+- Leakage: the git-freeze context now excludes tags **created after T**. `git tag --merged`
+  selects by reachability, so an annotated tag cut later from a pre-T commit leaked a future
+  release; `build_context` now filters `--merged` tags by creator date `<= T`, matching the
+  GitHub-API path's `published_at <= T` (#245).
 
 ## [0.3.0] - 2026-07-03
 

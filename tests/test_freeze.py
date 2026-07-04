@@ -69,6 +69,40 @@ def test_build_context_keeps_ten_most_recent_releases():
 
 
 @pytest.mark.skipif(shutil.which("git") is None, reason="git required")
+def test_build_context_excludes_tags_created_after_T():
+    # A tag reachable from T but *created after* T (a retroactive/backport annotated tag) must
+    # not leak into the knowable-at-T context, even though `git tag --merged` would list it.
+    repo = tempfile.mkdtemp()
+    try:
+        _git(repo, "init", "-q")
+        _git(repo, "config", "user.email", "t@t")
+        _git(repo, "config", "user.name", "t")
+
+        at_t = os.environ.copy()
+        at_t.update({"GIT_AUTHOR_DATE": "2024-01-01T12:00:00+00:00",
+                     "GIT_COMMITTER_DATE": "2024-01-01T12:00:00+00:00"})
+        with open(os.path.join(repo, "a.txt"), "w", encoding="utf-8") as f:
+            f.write("a\n")
+        _git(repo, "add", "-A", env=at_t)
+        _git(repo, "commit", "-q", "-m", "A", env=at_t)
+        _git(repo, "tag", "v1.0.0", env=at_t)                       # release at T (lightweight)
+        head = subprocess.run(["git", "-C", repo, "rev-parse", "HEAD"],
+                              capture_output=True, text=True).stdout.strip()
+
+        # annotated tag pointing at the same commit A, but created 5 months LATER
+        after_t = os.environ.copy()
+        after_t.update({"GIT_AUTHOR_DATE": "2024-06-01T12:00:00+00:00",
+                        "GIT_COMMITTER_DATE": "2024-06-01T12:00:00+00:00"})
+        _git(repo, "tag", "-a", "-m", "cut later", "v2.0.0", head, env=after_t)
+
+        tags = [r["tag"] for r in build_context(repo, head)["releases"]]
+        assert "v1.0.0" in tags          # knowable at T
+        assert "v2.0.0" not in tags      # created after T -> not knowable, must be excluded
+    finally:
+        shutil.rmtree(repo, ignore_errors=True)
+
+
+@pytest.mark.skipif(shutil.which("git") is None, reason="git required")
 def test_build_context_release_order_is_not_lexicographic():
     # Stronger #90 guard: the newest tag (v1.2.0) is created LAST, so it sorts to
     # the middle lexicographically — chronological creation order must still win.
