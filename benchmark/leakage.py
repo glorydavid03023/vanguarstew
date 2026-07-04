@@ -63,6 +63,8 @@ def scrub_context(context: dict) -> dict:
     ctx["open_issues"] = _scrub_titles(ctx.get("open_issues"), "title")
     ctx["open_prs"] = _scrub_titles(ctx.get("open_prs"), "title")
     ctx["milestones"] = _scrub_titles(ctx.get("milestones"), "title")
-    ctx["releases"] = _scrub_titles(ctx.get("releases"), "name")
+    # Scrub both release identifiers: the GitHub-API path carries `name`, while the git-freeze
+    # path carries only `tag` — so scrubbing `name` alone left git-only releases untouched.
+    ctx["releases"] = _scrub_titles(_scrub_titles(ctx.get("releases"), "tag"), "name")
     ctx["_forward_signal_scrubbed"] = True
     return ctx

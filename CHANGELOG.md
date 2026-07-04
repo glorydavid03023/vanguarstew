@@ -19,6 +19,9 @@ All notable changes to this project are documented here. The format is based on
   freeze at the very first commit, with no prior history, defeating the bound), and
   `after`/`before` date bounds must be non-empty strings. Keeps the "leakage-safe config" as
   trustworthy as it claims to be (#232).
+- Leakage: `scrub_context` now scrubs forward-references in a release's `tag`, not just its
+  `name`. Git-freeze releases carry only a `tag` (no `name`), so on the default offline path a
+  forward-reference in a release identifier previously bypassed the leakage filter (#234).
 
 ## [0.3.0] - 2026-07-03
 

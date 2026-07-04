@@ -80,6 +80,22 @@ def test_scrub_context_scrubs_nested_fields_only():
     assert ctx.get("_forward_signal_scrubbed") is None  # original not mutated
 
 
+def test_scrub_context_scrubs_release_tag_on_both_paths():
+    # git-freeze releases carry only a `tag` (no `name`) — its forward refs must still be
+    # scrubbed, and so must a `tag` alongside a `name` on the GitHub-API shape.
+    ctx = {
+        "releases": [
+            {"tag": "v2.0-fixes-#900"},                                  # git-freeze shape
+            {"tag": "v3.0-see-a1b2c3d", "name": "Release v3.0"},         # API shape
+        ],
+    }
+    out = scrub_context(ctx)
+    assert "#900" not in out["releases"][0]["tag"] and "#ref" in out["releases"][0]["tag"]
+    assert "a1b2c3d" not in out["releases"][1]["tag"] and "<sha>" in out["releases"][1]["tag"]
+    # a tag with no forward reference is left intact
+    assert scrub_context({"releases": [{"tag": "v1.2.0"}]})["releases"][0]["tag"] == "v1.2.0"
+
+
 def _fake_history(n):
     return [f"sha{i:03d}" for i in range(n)]
 
