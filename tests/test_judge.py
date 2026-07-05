@@ -185,6 +185,21 @@ def test_dual_order_ties_a_position_biased_judge():
     assert pairwise_judge({}, _GOOD, _BAD, [], _FakeLLM("position_second")) == "tie"
 
 
+def test_judge_verbose_categorizes_dual_order_and_offline_modes():
+    winner, judge_order = judge_verbose({}, _GOOD, _BAD, [], _FakeLLM("content"))
+    assert (winner, judge_order) == ("A", "agree")
+
+    winner, judge_order = judge_verbose({}, _GOOD, _BAD, [], _FakeLLM("position_first"))
+    assert (winner, judge_order) == ("tie", "disagree")
+
+    winner, judge_order = judge_verbose({}, _GOOD, _BAD, [], _FakeLLM("tie"))
+    assert (winner, judge_order) == ("tie", "tie")
+
+    winner, judge_order = judge_verbose({}, _GOOD, _BAD, [], LLM(api_key="offline"))
+    assert judge_order == "offline"
+    assert winner in ("A", "B", "tie")
+
+
 def test_single_order_mode_makes_one_call_and_can_be_swayed():
     # With dual_order disabled, only one call is made and a position-biased judge decides it.
     llm = _FakeLLM("position_first")
