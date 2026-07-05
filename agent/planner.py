@@ -7,38 +7,232 @@ not on naming the exact PRs that happened.
 from __future__ import annotations
 
 import json
+import re
+
+from agent.context import context_for_agent
+
+# Generic verbs / queue words dropped before matching a plan item to a PR, so the match
+# keys on the real subject ("loader race") not the framing ("review the PR to fix ...").
+_STOPWORDS = frozenset({
+    "add", "added", "adds", "fix", "fixes", "fixed", "update", "updates", "updated",
+    "improve", "improves", "support", "make", "use", "using", "new", "the", "and", "for",
+    "with", "into", "from", "via", "pull", "request", "requests", "review", "reviews",
+    "merge", "merges", "approve", "change", "changes", "land", "ship", "issue", "feature",
+    "bugfix", "refactor", "docs", "release", "work", "that", "this",
+})
+
+_REVIEW_MARKERS = ("review", "merge", "approve", "request changes", "pull request", "pr #")
+# Explicit PR references: "#7", "PR #7", "pull request 7"
+_PR_NUMBER = re.compile(
+    r"(?:#\s*(\d+)\b|(?:pull\s+request|pr)\s+#?\s*(\d+)\b)",
+    re.I,
+)
+# Minimum PR-subject phrase length for substring matching — shorter titles are ambiguous.
+_MIN_SUBJECT_PHRASE = 8
 
 SYSTEM = (
     "You are an experienced repository maintainer. Given the repo state and its inferred "
     "maintainer philosophy, plan the next concrete maintainer actions / PRs that should "
-    "happen, in priority order. Stay consistent with the philosophy. Respond ONLY with JSON."
+    "happen, in priority order. When open pull requests are waiting for review, a strong "
+    "maintainer clears or explicitly schedules that queue before unrelated greenfield work. "
+    "Stay consistent with the philosophy. Respond ONLY with JSON."
 )
+
+
+def _pr_queue_note(context: dict) -> str:
+    prs = [p for p in (context.get("open_prs") or []) if (p.get("title") or "").strip()]
+    if not prs:
+        return ""
+    lines = [f"- #{p.get('number', '?')}: {p['title'].strip()}" for p in prs]
+    return (
+        f"\nOpen pull requests awaiting review ({len(lines)}):\n"
+        + "\n".join(lines)
+        + "\n\nInclude at least one plan item to review, merge, or request changes on a "
+        "queued pull request when the queue above is non-empty.\n"
+    )
+
+
+def _offline_plan_stub(context: dict, n: int) -> list:
+    """Deterministic offline plan: prioritize the visible PR queue when present."""
+    items = []
+    for pr in context.get("open_prs") or []:
+        title = (pr.get("title") or "").strip()
+        if not title:
+            continue
+        items.append({
+            "title": f"Review pull request: {title}",
+            "kind": "triage",
+            "rationale": "open PR awaiting maintainer review",
+            "theme": "PR queue",
+        })
+    if not items:
+        items.append({
+            "title": "offline stub action",
+            "kind": "triage",
+            "rationale": "offline",
+            "theme": "offline",
+        })
+    return items[:n]
+
+
+def _pr_queue(context: dict) -> list:
+    return [
+        p for p in (context.get("open_prs") or [])
+        if isinstance(p, dict) and (p.get("title") or "").strip()
+    ]
+
+
+def _significant_tokens(text: str) -> set:
+    return {
+        t for t in re.findall(r"[a-z0-9]+", (text or "").lower())
+        if len(t) > 2 and t not in _STOPWORDS
+    }
+
+
+def _explicit_pr_number(*texts: str) -> int | None:
+    """Return an explicit PR number referenced in plan text, if any."""
+    for text in texts:
+        if not text:
+            continue
+        for match in _PR_NUMBER.finditer(text):
+            raw = match.group(1) or match.group(2)
+            if raw:
+                return int(raw)
+    return None
+
+
+def _title_contains_pr_subject(item: dict, pr: dict) -> bool:
+    """True when the plan item quotes the PR's subject as a phrase (not a lone token)."""
+    subject = (pr.get("title") or "").strip().lower()
+    if len(subject) < _MIN_SUBJECT_PHRASE:
+        return False
+    blob = f"{item.get('title', '')} {item.get('rationale', '')}".lower()
+    return subject in blob
+
+
+def _matched_pr(item: dict, prs: list):
+    """The open PR a plan item is about, or None.
+
+    Matching order: explicit ``#N`` reference, then full-subject phrase, then
+    significant-token overlap. One-word PR titles never match on overlap alone —
+    they are too ambiguous when the queue grows. An explicit ``#N`` that names a
+    PR no longer in the queue is treated as stale: the item is **not** matched
+    against a different open PR via fallback, since the author already committed
+    to a specific number.
+    """
+    by_number = {p.get("number"): p for p in prs if p.get("number") is not None}
+
+    ref = _explicit_pr_number(item.get("title", ""), item.get("rationale", ""))
+    if ref is not None:
+        return by_number.get(ref)  # None when stale (suppresses fallback matching)
+
+    for pr in prs:
+        if _title_contains_pr_subject(item, pr):
+            return pr
+
+    itoks = _significant_tokens(item.get("title", "")) | _significant_tokens(item.get("theme", ""))
+    if not itoks:
+        return None
+
+    best, best_overlap = None, 0
+    for pr in prs:
+        ptoks = _significant_tokens(pr.get("title", ""))
+        if not ptoks:
+            continue
+        overlap = len(itoks & ptoks)
+        if overlap == 0:
+            continue
+        n_pr = len(ptoks)
+        if n_pr == 1:
+            # Single-token PR titles are ambiguous — overlap-only matching is disabled.
+            continue
+        if overlap > best_overlap and (overlap >= 2 or overlap == n_pr):
+            best, best_overlap = pr, overlap
+    return best
+
+
+def _is_review_item(item: dict) -> bool:
+    """True when the item already frames the work as reviewing/triaging a PR."""
+    if (item.get("kind") or "").strip().lower() == "triage":
+        return True
+    title = (item.get("title") or "").lower()
+    return any(marker in title for marker in _REVIEW_MARKERS)
+
+
+def reconcile_plan_with_queue(plan, context: dict, n: int) -> list:
+    """Make the plan honor the open-PR queue, deterministically and independent of the LLM.
+
+    Guards three failure modes when an LLM disregards the provided queue:
+    - **Duplicates in flight**: an item that restates an open PR's work is down-weighted to a
+      `triage` review item and flagged with `restates_pr`, instead of being planned as new work.
+    - **Redundant items**: multiple items targeting the same PR are collapsed to the first.
+    - **Ignored queue**: if no item addresses any open PR, a review item for the top PR is
+      prepended so the queue is never silently skipped.
+
+    With no open PRs (or none matched) the plan passes through unchanged, capped to `n`.
+    """
+    prs = _pr_queue(context)
+    plan = [i for i in (plan or []) if isinstance(i, dict) and (i.get("title") or "").strip()]
+    if not prs:
+        return plan[:n]
+
+    out, seen_prs, addressed = [], set(), False
+    for item in plan:
+        pr = _matched_pr(item, prs)
+        if pr is not None:
+            number = pr.get("number")
+            if number in seen_prs:
+                continue
+            seen_prs.add(number)
+            addressed = True
+            if not _is_review_item(item):
+                item = {
+                    **item,
+                    "kind": "triage",
+                    "restates_pr": number,
+                    "rationale": (
+                        f"restates open PR #{number} already in flight; review it instead of "
+                        "duplicating the work"
+                    ),
+                }
+        out.append(item)
+
+    if not addressed:
+        top = prs[0]
+        out.insert(0, {
+            "title": f"Review pull request #{top.get('number', '?')}: {top['title'].strip()}",
+            "kind": "triage",
+            "restates_pr": top.get("number"),
+            "rationale": (
+                "the open PR queue was omitted from the plan; a strong maintainer clears or "
+                "schedules review before unrelated work"
+            ),
+            "theme": "PR queue",
+        })
+    return out[:n]
 
 
 def plan_next_actions(context: dict, philosophy: dict, n: int, llm) -> list:
     user = (
         f"Repository philosophy:\n{json.dumps(philosophy, indent=1)[:4000]}\n\n"
-        f"Repository state:\n{_render(context)}\n\n"
+        f"Repository state:\n{_render(context)}\n"
+        f"{_pr_queue_note(context)}\n"
         f"Plan the next {n} maintainer actions/PRs. Return a JSON list; each item:\n"
         '  "title": short imperative title,\n'
         '  "kind": one of "feature","bugfix","refactor","docs","release","dep","triage",\n'
         '  "rationale": why this, now, given the philosophy,\n'
         '  "theme": the higher-level direction this advances.'
     )
-    stub = [{
-        "title": "offline stub action",
-        "kind": "triage",
-        "rationale": "offline",
-        "theme": "offline",
-    }]
+    stub = _offline_plan_stub(context, n)
     plan = llm.chat_json(SYSTEM, user, stub=stub)
     if isinstance(plan, dict):  # tolerate {"plan": [...]}
         plan = plan.get("plan") or plan.get("actions") or []
-    return plan[:n] if isinstance(plan, list) else []
+    return reconcile_plan_with_queue(plan if isinstance(plan, list) else [], context, n)
 
 
 def _render(context: dict) -> str:
-    keep = {k: context.get(k) for k in (
+    ctx = context_for_agent(context)
+    keep = {k: ctx.get(k) for k in (
         "frozen_at", "recent_commits", "open_issues", "open_prs",
         "labels", "milestones", "releases", "readme_excerpt",
     )}

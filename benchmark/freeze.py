@@ -23,6 +23,21 @@ def _git(repo, *args, check=True):
     return r.stdout
 
 
+def parse_path_list(out: str) -> list:
+    """Parse a NUL-delimited (``git ... -z``) path list into individual paths.
+
+    Git's ``-z`` output separates each path with a NUL byte, so filenames that
+    contain spaces, tabs, newlines, or shell-sensitive characters survive intact.
+    Splitting on whitespace or lines instead would corrupt such paths — and since
+    benchmark scoring attributes work by file, that corruption is a hygiene bug.
+
+    Leading/trailing NULs yield empty fields (e.g. the terminating separator), which
+    we drop. Prefer this over ``str.split()``/``str.splitlines()`` for any git output
+    that is a list of paths.
+    """
+    return [field for field in out.split("\0") if field]
+
+
 def origin_url(repo: str) -> str:
     return _git(repo, "remote", "get-url", "origin", check=False).strip()
 
@@ -58,7 +73,13 @@ def build_context(repo: str, commit: str, lookback: int = 50) -> dict:
         parts = line.split("\t", 2)
         if len(parts) == 3:
             commits.append({"sha": parts[0][:10], "date": parts[1], "subject": parts[2]})
-    tags = [t for t in _git(repo, "tag", "--merged", commit, check=False).splitlines() if t]
+    # `git tag --merged` defaults to refname order, which is wrong for versions like
+    # v1.10.0 vs v1.9.0. Sort by creation date so `tags[-10:]` is truly the recent window.
+    tags = [
+        t
+        for t in _git(repo, "tag", "--sort=creatordate", "--merged", commit, check=False).splitlines()
+        if t
+    ]
     readme = ""
     for name in ("README.md", "README.rst", "README", "docs/README.md"):
         content = file_at(repo, commit, name)

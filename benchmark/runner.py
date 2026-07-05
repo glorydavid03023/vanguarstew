@@ -12,6 +12,7 @@ import json
 import os
 import random
 import shutil
+import subprocess
 import sys
 import tempfile
 
@@ -20,10 +21,21 @@ from agent.llm import LLM
 from benchmark.baselines import DEFAULT_BASELINE, get_baseline
 from benchmark.freeze import write_frozen
 from benchmark.github_context import enrich_context
-from benchmark.judge import pairwise_judge
+from benchmark.judge import build_judge_report, judge_verbose, summarize_judge_orders
 from benchmark.leakage import scrub_context
-from benchmark.score import objective_score, trajectory_overlap
+from benchmark.repo_set import RepoSetError, load_repo_set
+from benchmark.score import (
+    base_from_releases,
+    composite_score,
+    objective_component,
+    objective_score,
+    trajectory_overlap,
+)
 from benchmark.taskgen import generate_tasks
+
+# Challenger-perspective judge outcome per row (mirrors score._JUDGE_OUTCOME, keyed by the
+# runner's decoded winner label): a win is 1.0, a tie 0.5, a loss 0.0.
+_JUDGE_COMPONENT = {"challenger": 1.0, "tie": 0.5, "baseline": 0.0}
 
 
 def load_solve(agent_file: str = "agent.py"):
@@ -45,6 +57,30 @@ def _submission(out: dict) -> dict:
     }
 
 
+def _is_placeholder_source(source: str) -> bool:
+    return "OWNER/" in source
+
+
+def _materialize_repo_source(source: str, checkout_root: str | None) -> tuple[str, bool]:
+    """Return a local repo path for a repo-set source plus whether it should be cleaned up."""
+    if _is_placeholder_source(source):
+        raise RepoSetError(
+            f"repo-set source {source!r} is a placeholder (OWNER/...); "
+            "copy the example config and replace placeholder sources with vetted repos"
+        )
+    if os.path.isdir(source):
+        return source, False
+    if checkout_root is None:
+        raise RepoSetError(f"repo-set source not found locally: {source}")
+    dest = os.path.join(checkout_root, f"repo_{len(os.listdir(checkout_root))}")
+    try:
+        subprocess.run(["git", "clone", "-q", source, dest], check=True, capture_output=True,
+                       text=True)
+    except subprocess.CalledProcessError as exc:
+        raise RepoSetError(f"failed to clone repo-set source {source!r}: {exc.stderr.strip()}") from exc
+    return dest, True
+
+
 def run_replay(repo_path, agent_file="agent.py", n_tasks=3, horizon=5,
                model=None, api_base=None, api_key=None, work_dir=None, seed=0,
                enrich_github=False, github_token=None,
@@ -53,8 +89,9 @@ def run_replay(repo_path, agent_file="agent.py", n_tasks=3, horizon=5,
     solve = load_solve(agent_file)
     opponent = get_baseline(baseline)
     llm = LLM(model=model, api_base=api_base, api_key=api_key)
-    tasks = generate_tasks(repo_path, n_tasks, horizon,
-                           recent_bias=recent_bias, rotation_seed=rotation_seed)
+    tasks = generate_tasks(
+        repo_path, n_tasks, horizon, min_history=min_history,
+        recent_bias=recent_bias, rotation_seed=rotation_seed, after=after, before=before)
     if not tasks:
         return {"error": "no usable tasks (repo too small for horizon/min_history)", "tasks": 0}
 
@@ -83,23 +120,52 @@ def run_replay(repo_path, agent_file="agent.py", n_tasks=3, horizon=5,
                                     task["revealed"], llm, rng)
             who = {"A": "challenger", "B": "baseline", "tie": "tie"}[winner]
             tally[who] += 1
+            obj = objective_score(
+                challenger.get("plan"), task["revealed"],
+                version_bump=challenger.get("version_bump"),
+                base_version=base_from_releases(ctx.get("releases")),
+                open_issues=ctx.get("open_issues"),
+            )
             rows.append({
                 "task": k,
                 "freeze": task["freeze_commit"][:10],
                 "winner": who,
+                "judge_order": judge_order,
                 "overlap": trajectory_overlap(challenger.get("plan"), task["revealed"]),
-                "objective": objective_score(challenger.get("plan"), task["revealed"]),
+                "objective": obj,
+                "composite": composite_score(winner, obj, w_judge, w_objective),
             })
     finally:
         if not work_dir:
             shutil.rmtree(base, ignore_errors=True)
 
+    # The single-repo composite output contract: the mean blended score, plus the two
+    # component means it blends (judge outcome + objective anchor) so the number is
+    # inspectable and the multi-repo aggregate has explicit parts to average.
+    composites = [r["composite"] for r in rows]
+    judge_parts = [_JUDGE_COMPONENT[r["winner"]] for r in rows]
+    objective_parts = [objective_component(r["objective"]) for r in rows]
+    judge_order_stats = summarize_judge_orders(r.get("judge_order") for r in rows)
     return {
         "tasks": len(tasks),
+        "baseline": baseline,
         "tally": tally,
         "decisive_margin": tally["challenger"] - tally["baseline"],
+        "composite_mean": round(sum(composites) / len(composites), 3) if composites else 0.0,
+        "composite_parts": {
+            "judge_mean": round(sum(judge_parts) / len(judge_parts), 3) if judge_parts else 0.0,
+            "objective_mean": (
+                round(sum(objective_parts) / len(objective_parts), 3) if objective_parts else 0.0
+            ),
+        },
+        "weights": {"judge": w_judge, "objective": w_objective},
         "rows": rows,
+        "judge_order_stats": judge_order_stats,
+        "judge_report": build_judge_report(tally, judge_order_stats),
         "offline": llm.offline,
         "github_enriched": enrich_github,
         "baseline": baseline,
     }
+    if repo_set_meta is not None:
+        result["repo_set"] = repo_set_meta
+    return result
