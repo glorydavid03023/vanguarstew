@@ -19,6 +19,13 @@ All notable changes to this project are documented here. The format is based on
   and the gap is reported only when both partitions scored a repo (#208).
 
 ### Fixed
+- Leakage / fail-closed (`benchmark/github_context.py`): `_issue_timeline` swallowed a
+  transient error on a page *after* the first and returned the partial events with
+  `truncated=False`, so `_issue_record_at` trusted an incomplete timeline and reported
+  `labels_as_of_t=True` — potentially asserting an as-of-T label that a later (unfetched)
+  `unlabeled` event removed before T. A mid-pagination error now marks the timeline
+  `truncated`, so the caller fails closed (omits labels) exactly like the page-cap case; a
+  first-page error still yields `([], False)`. Extends the fail-closed guard from #345 (#865).
 - Leakage / context completeness (`benchmark/github_context.py`): the as-of-T `milestones`
   and `releases` were read from only the first API page, so a repo with more than 100 of
   either silently dropped the rest — which can hide a milestone that was open at T or an

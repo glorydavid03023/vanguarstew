@@ -471,6 +471,47 @@ def test_issue_timeline_signals_truncation(monkeypatch):
     assert gc._issue_timeline("base", None, None, 20) == ([], False)
 
 
+def test_issue_timeline_marks_truncated_on_error_after_first_page(monkeypatch):
+    # A full first page followed by an error on page 2 leaves the timeline incomplete: the
+    # partial events must be flagged truncated (not returned as truncated=False), so the caller
+    # fails closed instead of trusting a reconstruction that a later unfetched event may
+    # contradict. A first-page error still yields ([], False) — nothing was collected.
+    full_first = [{"event": "commented", "created_at": "2023-01-01T00:00:00Z"}] * 100
+
+    def flaky_get(url, token, timeout=20):
+        if "&page=1" in url:
+            return full_first
+        raise RuntimeError("simulated transient error on page 2")
+
+    monkeypatch.setattr(gc, "_get", flaky_get)
+    events, truncated = gc._issue_timeline("base", 1, None, 20, max_pages=5)
+    assert len(events) == 100 and truncated is True
+
+
+def test_open_issue_labels_omitted_when_timeline_errors_after_first_page(monkeypatch):
+    # End-to-end guard: a labeled event on page 1 that a page-2 unlabeled (never fetched) would
+    # have removed before T must NOT be reported as an authoritative as-of-T label. Fail closed.
+    T = datetime(2023, 6, 1, tzinfo=timezone.utc)
+    issues = [{"number": 1, "title": "open", "created_at": "2023-01-01T00:00:00Z",
+               "closed_at": None, "labels": [{"name": "bug"}]}]
+    page1 = [{"event": "labeled", "created_at": "2023-01-01T00:00:00Z", "label": {"name": "bug"}}]
+    page1 += [{"event": "commented", "created_at": "2023-01-02T00:00:00Z"}] * 99
+
+    def fake_get(url, token, timeout=20):
+        if "/timeline" in url:
+            if "&page=1" in url:
+                return page1
+            raise RuntimeError("simulated transient error on page 2")
+        if "/issues" in url:
+            return issues
+        return []
+
+    monkeypatch.setattr(gc, "_get", fake_get)
+    iss = gc.fetch_context_at("foo", "bar", T, token=None)["open_issues"][0]
+    assert iss["labels"] == []
+    assert iss["labels_as_of_t"] is False
+
+
 def test_open_issue_labels_omitted_when_timeline_truncated(monkeypatch):
     # A timeline that hits the page cap (5 full pages) may be missing a later `unlabeled`
     # event before T, so the partial reconstruction could be confidently WRONG. Fail closed
