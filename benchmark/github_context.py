@@ -226,11 +226,12 @@ def _labels_at(events, until: datetime):
 def _issue_timeline(base: str, number, token, timeout: int, max_pages: int = 5):
     """Fetch an issue/PR's timeline events (paginated).
 
-    Returns ``(events, truncated)``. ``truncated`` is True when the page cap is hit with a
-    full final page — more events may exist before T than were fetched, so a label
-    reconstruction from ``events`` could be *confidently wrong* (a later ``unlabeled`` beyond
-    the cap never gets applied) and the caller must not trust it. Returns ``([], False)`` on
-    any error or missing number, so reconstruction degrades to the safe omit-labels fallback.
+    Returns ``(events, truncated)``. ``truncated`` is True when the timeline is known to be
+    incomplete — either the page cap was hit with a full final page, or a page *after* the
+    first errored out mid-pagination — because a label reconstruction from partial ``events``
+    could then be *confidently wrong* (a later ``unlabeled`` that was never fetched is never
+    applied) and the caller must not trust it. Returns ``([], False)`` on a missing number or a
+    first-page error: nothing was collected, so the empty timeline already omits labels safely.
     """
     if number is None:
         return [], False
@@ -241,6 +242,12 @@ def _issue_timeline(base: str, number, token, timeout: int, max_pages: int = 5):
             batch = _get(f"{base}/issues/{number}/timeline?per_page=100&page={page}",
                          token, timeout)
         except Exception:
+            # A failure *after* a page was already collected leaves an incomplete timeline;
+            # flag it truncated so the caller fails closed rather than trusting a partial
+            # (possibly wrong) reconstruction. A first-page failure keeps ``([], False)`` —
+            # there is nothing to trust and the empty timeline already omits labels.
+            if events:
+                truncated = True
             break
         if not batch:
             break
