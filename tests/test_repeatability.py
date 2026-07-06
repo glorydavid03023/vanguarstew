@@ -71,7 +71,7 @@ def test_all_zero_runs_are_perfectly_stable():
 
 
 def test_max_cv_is_configurable():
-    runs = [_run(0.50), _run(0.55)]                 # cv ~= 0.048
+    runs = [_run(0.50), _run(0.55)]                 # cv ~= 0.067
     assert assess_repeatability(runs, max_cv=0.02)["stable"] is False
     assert assess_repeatability(runs, max_cv=0.10)["stable"] is True
 
@@ -118,9 +118,20 @@ def test_headline_reports_stable_unstable_and_inconclusive():
     assert DEFAULT_MAX_CV == 0.05
 
 
+def test_cv_uses_sample_standard_deviation():
+    # The CV of a sample of repeated runs uses the sample (Bessel-corrected) standard deviation,
+    # so run-to-run spread is not underestimated. Population stddev (pstdev) would give sd=0.04,
+    # cv=0.04 <= 0.05 and call this STABLE; the sample stddev is 0.057, cv=0.057 > 0.05 -> UNSTABLE.
+    result = assess_repeatability([_run(0.96), _run(1.04)], max_cv=0.05)
+    assert result["stddev"] == 0.057
+    assert result["cv"] == 0.057
+    assert result["stable"] is False
+    assert "exceeds max_cv" in result["reason"]
+
+
 def test_cv_boundary_is_inclusive():
     # stable requires cv <= max_cv; a cv exactly at the bound passes.
-    runs = [_run(0.50), _run(0.55)]                 # sd 0.025, mean 0.525, cv ~= 0.048
+    runs = [_run(0.50), _run(0.55)]                 # sd 0.035, mean 0.525, cv ~= 0.067
     result = assess_repeatability(runs)
     assert assess_repeatability(runs, max_cv=result["cv"])["stable"] is True
     assert assess_repeatability(runs, max_cv=result["cv"] - 0.001)["stable"] is False

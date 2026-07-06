@@ -19,6 +19,13 @@ All notable changes to this project are documented here. The format is based on
   and the gap is reported only when both partitions scored a repo (#208).
 
 ### Fixed
+- Benchmark gates (`benchmark/repeatability.py`): `assess_repeatability` computed the
+  coefficient of variation from the *population* standard deviation (`pstdev`) rather than the
+  *sample* standard deviation. The repeats are a sample of a noisy run, so the CV must use the
+  Bessel-corrected sample stddev; `pstdev` underestimates run-to-run spread by
+  `sqrt(n/(n-1))` (~1.41x at n=2), biasing the reproducibility gate too lenient and flipping the
+  `stable` verdict near the `max_cv` boundary (e.g. runs `[0.96, 1.04]` scored a CV of 0.04 and
+  passed at `max_cv=0.05`, when the true sample CV is 0.057 and should fail).
 - Benchmark gates (`benchmark/sample_adequacy.py`): `_partition_entries` collected the
   top-level `per_repo` list **and** the `tuned`/`held_out` partition lists additively, so an
   artifact carrying both shapes had every task counted twice (`_total_tasks` returned 14 for a

@@ -19,7 +19,7 @@ Pure analysis: no I/O, never mutates its inputs, and an artifact with no usable 
 from __future__ import annotations
 
 import logging
-from statistics import mean, pstdev
+from statistics import mean, stdev
 
 from benchmark.trend import headline_score
 
@@ -90,7 +90,10 @@ def assess_repeatability(artifacts, max_cv: float = DEFAULT_MAX_CV,
         return result
 
     mu = round(mean(scores), 3)
-    sd = round(pstdev(scores), 3)
+    # The repeats are a *sample* of a noisy run — the CV estimates run-to-run spread to decide
+    # reproducibility, so use the sample (Bessel-corrected) standard deviation. Population stddev
+    # underestimates the spread by sqrt(n/(n-1)) (~1.41x at n=2), biasing the gate too lenient.
+    sd = round(stdev(scores), 3) if len(scores) > 1 else 0.0
     if sd == 0:
         cv = 0.0                       # identical runs — perfectly stable regardless of the mean
     elif mu == 0:
