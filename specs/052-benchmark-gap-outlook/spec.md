@@ -15,7 +15,8 @@ as-built behavior of `benchmark/gap_outlook.py`; it introduces **no behavior cha
 ## Why
 
 `acceptance` gates whether the generalization gap is within a bound; `gap_outlook` only reports
-the gap, partition headline scores, and whether tuned performance held up versus held-out.
+the gap, partition headline scores, and whether held-out performance held up versus tuned (a
+`favorable` verdict when `generalization_gap <= 0`, matching the gap sign used by `acceptance`).
 
 ## User stories
 
@@ -55,8 +56,10 @@ Every summary SHALL include: `kind`, `generalization_gap`, `tuned_score`, `held_
 - `tuned_score` SHALL be `_partition_score(tuned)` when that returns a number, otherwise
   `headline_score(tuned)`.
 - `held_out_score` SHALL be `_partition_score(held_out)`.
-- WHEN `generalization_gap` is numeric THEN `verdict` SHALL be `"favorable"` if `gap >= 0`, else
-  `"unfavorable"`; otherwise `verdict` SHALL be `None`.
+- WHEN `generalization_gap` is numeric THEN `verdict` SHALL be `"favorable"` if `gap <= 0`, else
+  `"unfavorable"`; otherwise `verdict` SHALL be `None`. (`generalization_gap = tuned - held_out`,
+  so a positive gap means held-out performance dropped relative to tuned — worse generalization —
+  consistent with the sign used by `acceptance`, `runner`, and `gap_integrity`.)
 
 ### Gap outlook headline
 

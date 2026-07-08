@@ -86,18 +86,20 @@ def test_partition_score_zero_scored_repos():
 
 
 def test_generalization_favorable_and_unfavorable():
-    favorable = summarize_gap_outlook(_gen(0.7, 0.6, 0.1))
-    assert favorable == {
+    # gap = tuned - held_out; a positive gap (held-out dropped) is unfavorable, a zero/negative
+    # gap (held-out held up) is favorable — matching the acceptance/runner/gap_integrity sign.
+    unfavorable = summarize_gap_outlook(_gen(0.7, 0.6, 0.1))
+    assert unfavorable == {
         "kind": "generalization",
         "generalization_gap": 0.1,
         "tuned_score": 0.7,
         "held_out_score": 0.6,
-        "verdict": "favorable",
+        "verdict": "unfavorable",
     }
 
-    unfavorable = summarize_gap_outlook(_gen(0.5, 0.6, -0.1))
-    assert unfavorable["verdict"] == "unfavorable"
-    assert unfavorable["generalization_gap"] == -0.1
+    favorable = summarize_gap_outlook(_gen(0.5, 0.6, -0.1))
+    assert favorable["verdict"] == "favorable"
+    assert favorable["generalization_gap"] == -0.1
 
 
 def test_non_generalization_none_fields():
@@ -118,9 +120,9 @@ def test_summary_always_includes_required_keys():
 
 
 def test_headline_generalization_exact_format():
-    out = summarize_gap_outlook(_gen(0.65, 0.60, 0.05))
+    out = summarize_gap_outlook(_gen(0.65, 0.60, 0.05))   # gap +0.05: held-out dropped
     assert gap_outlook_headline(out) == (
-        "gap outlook: favorable (gap +0.050, tuned 0.65 vs held-out 0.6)"
+        "gap outlook: unfavorable (gap +0.050, tuned 0.65 vs held-out 0.6)"
     )
 
 

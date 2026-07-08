@@ -1,8 +1,10 @@
 """Report generalization gap outlook from a tuned/held-out replay artifact.
 
 ``acceptance`` gates whether the gap is within a bound; this utility only reports the gap,
-partition headline scores, and whether tuned performance held up versus held-out (favorable when
-``generalization_gap >= 0``).
+partition headline scores, and whether held-out performance held up versus tuned. Since
+``generalization_gap = tuned - held_out`` (positive means held-out did *worse*, mirroring
+``runner``/``acceptance``/``gap_integrity``), the verdict is ``favorable`` when
+``generalization_gap <= 0`` and ``unfavorable`` otherwise.
 
 Pure analysis: no I/O, never mutates its input, and missing telemetry yields ``None`` fields.
 """
@@ -54,7 +56,10 @@ def summarize_gap_outlook(artifact) -> dict:
     held_score = _partition_score(held_out)
     verdict = None
     if gap_value is not None:
-        verdict = "favorable" if gap_value >= 0 else "unfavorable"
+        # gap = tuned - held_out; a positive gap means held-out performance dropped relative to
+        # tuned (worse generalization), which `acceptance`/`runner`/`gap_integrity` all treat as
+        # bad. So held-out "held up" (favorable) only when the gap is zero or negative.
+        verdict = "favorable" if gap_value <= 0 else "unfavorable"
     return {
         "kind": kind,
         "generalization_gap": gap_value,

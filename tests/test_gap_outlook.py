@@ -26,15 +26,26 @@ def _gen(tuned, held, gap):
     }
 
 
-def test_favorable_when_gap_non_negative():
+def test_unfavorable_when_gap_positive():
+    # gap = tuned - held_out; positive means held-out dropped relative to tuned (worse
+    # generalization), so the verdict is unfavorable.
     out = summarize_gap_outlook(_gen(0.7, 0.6, 0.1))
-    assert out["verdict"] == "favorable"
+    assert out["verdict"] == "unfavorable"
     assert out["generalization_gap"] == 0.1
 
 
-def test_unfavorable_when_gap_negative():
-    out = summarize_gap_outlook(_gen(0.5, 0.6, -0.1))
-    assert out["verdict"] == "unfavorable"
+def test_favorable_when_gap_zero_or_negative():
+    assert summarize_gap_outlook(_gen(0.6, 0.6, 0.0))["verdict"] == "favorable"   # held up exactly
+    assert summarize_gap_outlook(_gen(0.5, 0.6, -0.1))["verdict"] == "favorable"  # held-out better
+
+
+def test_verdict_agrees_with_acceptance_gate():
+    # gap_outlook must not label "favorable" a run the acceptance gate rejects for its gap.
+    from benchmark.acceptance import check_acceptance
+    artifact = _gen(0.8, 0.3, 0.5)                       # held-out collapsed; gap 0.5 > max_gap
+    assert summarize_gap_outlook(artifact)["verdict"] == "unfavorable"
+    gate = check_acceptance(artifact)
+    assert "gap_within_bound" in [c["name"] for c in gate["checks"] if not c["passed"]]
 
 
 def test_non_generalization_returns_none_verdict():
@@ -44,8 +55,8 @@ def test_non_generalization_returns_none_verdict():
 
 
 def test_headline():
-    out = summarize_gap_outlook(_gen(0.65, 0.60, 0.05))
-    assert "favorable" in gap_outlook_headline(out)
+    assert "unfavorable" in gap_outlook_headline(summarize_gap_outlook(_gen(0.65, 0.60, 0.05)))
+    assert "favorable" in gap_outlook_headline(summarize_gap_outlook(_gen(0.60, 0.65, -0.05)))
 
 
 @pytest.fixture
@@ -58,7 +69,7 @@ def tmp_artifact(tmp_path):
 
 
 def test_cli(tmp_artifact, capsys):
-    path = tmp_artifact(_gen(0.7, 0.65, 0.05))
+    path = tmp_artifact(_gen(0.7, 0.65, 0.05))          # gap +0.05: held-out dropped
     assert cli.run([path]) == 0
     body = json.loads(capsys.readouterr().out)
-    assert body["verdict"] == "favorable"
+    assert body["verdict"] == "unfavorable"

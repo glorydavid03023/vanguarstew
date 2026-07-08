@@ -19,6 +19,12 @@ All notable changes to this project are documented here. The format is based on
   and the gap is reported only when both partitions scored a repo (#208).
 
 ### Fixed
+- Benchmark reporting (`benchmark/gap_outlook.py`): the favorability verdict was sign-inverted.
+  `generalization_gap = tuned - held_out`, so a **positive** gap means held-out performance
+  dropped (worse generalization) — the sign `acceptance`, `runner`, and `gap_integrity` all use —
+  yet `gap_outlook` reported `"favorable"` for `gap >= 0`. It labelled exactly the runs the
+  `acceptance` gate *rejects* as favorable (and good generalization as unfavorable). The verdict
+  is now `"favorable"` when `gap <= 0`; Spec 052 and its tests are corrected to match.
 - Benchmark reporting (`benchmark/win_rate.py`): `summarize_win_rate` read only the artifact's
   top-level `tally`, so a `--generalization` artifact (which carries a tally under
   `tuned`/`held_out` only) reported `n/a` for every generalization run while sibling utilities
