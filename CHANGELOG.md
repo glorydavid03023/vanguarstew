@@ -19,6 +19,13 @@ All notable changes to this project are documented here. The format is based on
   and the gap is reported only when both partitions scored a repo (#208).
 
 ### Fixed
+- Benchmark reporting (`benchmark/dual_order_coverage.py`): `_task_total` read only the
+  top-level `tasks` field, which a multi-repo run and each generalization partition never emit
+  (task counts live under `per_repo[*].tasks`), so coverage was `n/a` for every aggregate run —
+  contradicting the module's own docstring and its sibling `dual_order_share` (which reports a
+  value on the same artifact). It now falls back to summing `per_repo[*].tasks` (fail-closed on
+  a malformed entry), mirroring `coverage`/`sample_adequacy`/`repo_task_mean`; Spec 047 and its
+  tests are updated to match.
 - Benchmark reporting (`benchmark/gap_outlook.py`): the favorability verdict was sign-inverted.
   `generalization_gap = tuned - held_out`, so a **positive** gap means held-out performance
   dropped (worse generalization) — the sign `acceptance`, `runner`, and `gap_integrity` all use —

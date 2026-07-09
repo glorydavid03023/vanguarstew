@@ -48,7 +48,10 @@ much of a run relied on the robust treatment versus cheaper single-order judging
 
 - `_dual_order_tasks` SHALL read `dual_order_tasks` from `slice_["judge_order_stats"]` when stats is
   a `dict`.
-- `_task_total` SHALL read `tasks` from the slice.
+- `_task_total` SHALL read the top-level `tasks` from the slice when it is a non-negative
+  `_is_int`; otherwise it SHALL sum `per_repo[*].tasks` (a multi-repo run and each generalization
+  partition carry no top-level `tasks`), returning `None` when `per_repo` is not a non-empty list
+  or any entry lacks a non-negative `_is_int` `tasks`.
 - WHEN a count is missing, not a non-negative `_is_int`, or stats is not a `dict` THEN the helper
   SHALL return `None`.
 

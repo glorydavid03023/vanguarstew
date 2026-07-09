@@ -93,6 +93,17 @@ def test_dual_order_tasks_and_task_total_happy_path():
     assert _task_total(slice_) == 10
 
 
+def test_task_total_sums_per_repo_when_no_top_level_tasks():
+    # Multi-repo / generalization slices carry no top-level `tasks`; the total is summed from
+    # per_repo, else None when per_repo is missing/empty or any entry is malformed.
+    assert _task_total({"per_repo": [{"tasks": 3}, {"tasks": 3}]}) == 6
+    assert _task_total({"per_repo": []}) is None
+    assert _task_total({"per_repo": [{"tasks": 3}, {"tasks": "x"}]}) is None
+    assert _task_total({"per_repo": "nope"}) is None
+    # A valid top-level `tasks` still takes priority over per_repo.
+    assert _task_total({"tasks": 4, "per_repo": [{"tasks": 99}]}) == 4
+
+
 def test_count_helpers_missing_stats():
     assert _dual_order_tasks({"tasks": 10}) is None
     assert _task_total({"judge_order_stats": {"dual_order_tasks": 4}}) is None

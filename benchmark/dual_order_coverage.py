@@ -43,9 +43,26 @@ def _dual_order_tasks(slice_: dict) -> int | None:
 
 
 def _task_total(slice_: dict) -> int | None:
-    # A whole, non-negative count; a missing, non-integer, or negative value yields None.
+    """Total tasks in a slice: the top-level ``tasks`` (single-repo), else the sum of the
+    ``per_repo`` task counts. A multi-repo run and each generalization partition carry no
+    top-level ``tasks`` — the counts live under ``per_repo[*].tasks`` — so without this fallback
+    coverage was ``None`` for every aggregate run. A missing/non-integer/negative top-level count
+    with no usable ``per_repo`` list, or any malformed ``per_repo`` entry, yields ``None``
+    (fail-closed, mirroring ``coverage``/``sample_adequacy``/``repo_task_mean``).
+    """
     value = slice_.get("tasks")
-    return value if _is_int(value) and value >= 0 else None
+    if _is_int(value) and value >= 0:
+        return value
+    per_repo = slice_.get("per_repo")
+    if not isinstance(per_repo, list) or not per_repo:
+        return None
+    total = 0
+    for entry in per_repo:
+        count = entry.get("tasks") if isinstance(entry, dict) else None
+        if not (_is_int(count) and count >= 0):
+            return None
+        total += count
+    return total
 
 
 def _coverage(dual: int | None, total: int | None) -> float | None:
@@ -83,9 +100,10 @@ def _combined(*slices: dict) -> dict:
 def summarize_dual_order_coverage(artifact) -> dict:
     """Return dual-order judging coverage for a replay ``artifact``.
 
-    Single- and multi-repo artifacts report a top-level coverage from the run's ``tasks`` and
-    ``judge_order_stats``. A ``generalization`` artifact reports each partition's coverage plus an
-    overall coverage summed across both partitions (``None`` unless both partitions carry counts).
+    Single-repo artifacts report a top-level coverage from the run's ``tasks``; a multi-repo run
+    (no top-level ``tasks``) derives the total from ``per_repo[*].tasks``. A ``generalization``
+    artifact reports each partition's coverage plus an overall coverage summed across both
+    partitions (``None`` unless both partitions carry counts).
     """
     artifact = _dict(artifact)
     kind = artifact_kind(artifact)

@@ -41,6 +41,45 @@ def test_multi_reads_top_level_counts():
     assert summary["coverage"] == 0.75
 
 
+def test_multi_sums_per_repo_when_no_top_level_tasks():
+    # A real run_multi_replay result has no top-level `tasks`; the total lives in per_repo.
+    # Without the per_repo fallback, coverage was n/a for every multi-repo run.
+    summary = summarize_dual_order_coverage({
+        "repos": 3, "scored_repos": 3,
+        "judge_order_stats": {"dual_order_tasks": 9},
+        "per_repo": [{"tasks": 3}, {"tasks": 3}, {"tasks": 3}],
+    })
+    assert summary["kind"] == "multi"
+    assert summary["tasks"] == 9 and summary["coverage"] == 1.0
+
+
+def test_generalization_partitions_derive_tasks_from_per_repo():
+    # Each partition is a multi-repo result (per_repo, no top-level tasks); the overall sums both.
+    summary = summarize_dual_order_coverage({
+        "generalization_gap": 0.0,
+        "tuned": {"judge_order_stats": {"dual_order_tasks": 6},
+                  "per_repo": [{"tasks": 3}, {"tasks": 3}]},
+        "held_out": {"judge_order_stats": {"dual_order_tasks": 2},
+                     "per_repo": [{"tasks": 3}]},
+    })
+    assert summary["kind"] == "generalization"
+    assert summary["tasks"] == 9 and summary["dual_order_tasks"] == 8
+    assert summary["coverage"] == 0.889          # 8/9
+    assert summary["partitions"]["tuned"]["coverage"] == 1.0
+    assert summary["partitions"]["held_out"]["coverage"] == round(2 / 3, 3)
+
+
+def test_task_total_fails_closed_on_malformed_per_repo():
+    # A malformed per_repo entry (non-dict, or a non-integer/negative tasks) makes the total
+    # untrustworthy -> None, rather than an undercount.
+    for bad_per_repo in ([{"tasks": 3}, "oops"], [{"tasks": 3}, {"tasks": "x"}],
+                         [{"tasks": 3}, {"tasks": -1}], []):
+        summary = summarize_dual_order_coverage({
+            "judge_order_stats": {"dual_order_tasks": 2}, "per_repo": bad_per_repo,
+        })
+        assert summary["tasks"] is None and summary["coverage"] is None
+
+
 def test_zero_tasks_is_none_not_divide_by_zero():
     assert summarize_dual_order_coverage(_slice(tasks=0, dual=0))["coverage"] is None
 
