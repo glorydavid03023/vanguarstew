@@ -149,6 +149,17 @@ def test_cli_rejects_a_missing_file(tmp_path):
     assert exc.value.code == 2
 
 
+def test_cli_rejects_a_directory_path(tmp_path, capsys):
+    # A directory raises IsADirectoryError (POSIX) / PermissionError (Windows) from open() --
+    # both are OSError subclasses that must be caught, not just FileNotFoundError.
+    with pytest.raises(SystemExit) as exc:
+        cli.run([str(tmp_path)])
+    assert exc.value.code == 2
+    captured = capsys.readouterr()
+    assert "Traceback" not in captured.err
+    assert str(tmp_path) in captured.err
+
+
 def test_cli_rejects_malformed_json(tmp_path):
     path = tmp_path / "bad.json"
     path.write_text("{not json", encoding="utf-8")

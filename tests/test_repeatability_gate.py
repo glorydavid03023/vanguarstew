@@ -210,6 +210,20 @@ def test_cli_missing_file_exits_two():
     assert proc.returncode == 2
 
 
+def test_cli_rejects_a_directory_path(tmp_path):
+    # A directory raises IsADirectoryError (POSIX) / PermissionError (Windows) from open() --
+    # both are OSError subclasses that must be caught, not just FileNotFoundError.
+    proc = subprocess.run(
+        [sys.executable, "-m", "scripts.repeatability_gate", str(tmp_path)],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+    )
+    assert proc.returncode == 2
+    assert "Traceback" not in proc.stderr
+    assert str(tmp_path) in proc.stderr
+
+
 def test_check_repeatability_does_not_mutate_inputs():
     artifacts = [_run(0.6), _run(0.61)]
     snap = copy.deepcopy(artifacts)
