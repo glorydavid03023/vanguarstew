@@ -81,7 +81,9 @@ calibration harness changes against intent.
 - The result SHALL include: `passed`, `scenario_count`, `results`, `symmetry_checks`, and `failed`.
 - `passed` SHALL be `True` only when every winner check passes AND every symmetry check passes
   (or there are no symmetry checks).
-- `failed` SHALL list scenario ids that failed winner or symmetry checks.
+- `failed` SHALL list the scenario ids that failed the winner or symmetry checks, each id at most
+  once — a scenario that fails both checks is listed a single time (matching
+  `score_calibration.check_calibration`, whose single-source `failed` never repeats).
 - The function SHALL NOT mutate the input `corpus` or scenario dicts.
 
 ### Malformed calibration-result robustness

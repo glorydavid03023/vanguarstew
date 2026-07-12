@@ -171,13 +171,18 @@ def check_calibration(corpus: list[dict] | None = None, llm: LLM | None = None) 
     winner_checks = [r for r in results]
     symmetry_passed = all(s["passed"] for s in symmetry) if symmetry else True
     winners_passed = all(r["passed"] for r in winner_checks)
+    # A scenario runs through both the winner and the symmetry checks under the same id, so one
+    # that fails both would otherwise be listed twice. Dedup while preserving first-seen order
+    # (winner-check failures first) so ``failed`` is the set of ids that failed any check --
+    # matching score_calibration.check_calibration, whose single-source ``failed`` never repeats.
+    failed_ids = [r["id"] for r in results if not r["passed"]]
+    failed_ids += [s["id"] for s in symmetry if not s["passed"]]
     return {
         "passed": winners_passed and symmetry_passed,
         "scenario_count": len(results),
         "results": results,
         "symmetry_checks": symmetry,
-        "failed": [r["id"] for r in results if not r["passed"]]
-               + [s["id"] for s in symmetry if not s["passed"]],
+        "failed": list(dict.fromkeys(failed_ids)),
     }
 
 

@@ -19,6 +19,13 @@ All notable changes to this project are documented here. The format is based on
   and the gap is reported only when both partitions scored a repo (#208).
 
 ### Fixed
+- Benchmark calibration (`benchmark/judge_calibration.py`): `check_calibration` built `failed` by
+  concatenating the winner-check failures and the symmetry-check failures by scenario id, so a
+  scenario that failed **both** checks was listed twice. `_failed_ids_list` does not de-duplicate,
+  so `calibration_headline` then rendered an impossible ratio such as `FAIL (2/1 failed: s1, s1)`
+  — a failed count above `scenario_count`. `failed` is now an order-preserving de-duplication
+  (each id at most once), matching `score_calibration.check_calibration`; Spec 017 and its tests
+  are updated to match (#1498).
 - Benchmark reporting (`benchmark/dual_order_coverage.py`): `_task_total` read only the
   top-level `tasks` field, which a multi-repo run and each generalization partition never emit
   (task counts live under `per_repo[*].tasks`), so coverage was `n/a` for every aggregate run —

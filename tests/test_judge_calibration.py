@@ -112,6 +112,28 @@ def test_calibration_headline_pass_and_fail():
     assert calibration_headline({}) == "calibration: no scenarios evaluated"
 
 
+def test_check_calibration_dedups_id_failing_both_winner_and_symmetry(monkeypatch):
+    """#1498: a scenario failing both the winner and symmetry checks is listed once, not twice.
+
+    The offline judge is order-symmetric (a swap always flips), so ``check_symmetry`` cannot fail
+    against it; force both checks to fail for one id and assert ``failed`` does not duplicate.
+    """
+    import benchmark.judge_calibration as jc
+
+    monkeypatch.setattr(
+        jc, "run_scenario",
+        lambda scenario, llm=None: {"id": scenario["id"], "passed": False, "detail": "wrong winner"},
+    )
+    monkeypatch.setattr(
+        jc, "check_symmetry",
+        lambda scenario, llm=None: {"id": scenario["id"], "passed": False, "detail": "no flip"},
+    )
+    result = check_calibration([dict(_VALID, id="s1", expect_symmetric=True)])
+    assert result["failed"] == ["s1"]
+    assert failed_scenarios(result) == ["s1"]
+    assert calibration_headline(result) == "calibration: FAIL (1/1 failed: s1)"
+
+
 # --- #625 / #852: malformed failed / symmetry_checks must not abort headlines --------
 
 _MALFORMED_CONTAINERS = [

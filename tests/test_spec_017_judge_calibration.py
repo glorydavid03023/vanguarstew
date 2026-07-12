@@ -208,6 +208,24 @@ def test_check_calibration_fails_when_winner_mismatch():
     assert result["failed"] == ["sample"]
 
 
+def test_check_calibration_lists_each_failed_id_once(monkeypatch):
+    # `failed` lists each id at most once: a scenario failing BOTH the winner and symmetry
+    # checks must not be duplicated (the offline judge cannot fail symmetry, so force both).
+    import benchmark.judge_calibration as jc
+
+    monkeypatch.setattr(
+        jc, "run_scenario",
+        lambda scenario, llm=None: {"id": scenario["id"], "passed": False},
+    )
+    monkeypatch.setattr(
+        jc, "check_symmetry",
+        lambda scenario, llm=None: {"id": scenario["id"], "passed": False},
+    )
+    result = check_calibration([dict(_VALID, id="s1", expect_symmetric=True)])
+    assert result["failed"] == ["s1"]
+    assert calibration_headline(result) == "calibration: FAIL (1/1 failed: s1)"
+
+
 def test_check_calibration_does_not_mutate_corpus():
     corpus = [dict(_VALID)]
     before = json.dumps(corpus, sort_keys=True)
