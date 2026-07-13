@@ -91,6 +91,25 @@ def _slice_summary(slice_) -> dict:
     return dict(_NONE_SLICE) if counts is None else _rates(*counts)
 
 
+def _combined(tuned: dict, held_out: dict) -> dict:
+    """Overall win rates across partitions — only when every partition has a defined rate.
+
+    Gate on each partition's derived ``challenger_rate`` being non-None, not merely on the raw
+    counts being integers. A zero-task slice has integer (all-zero) counts but a ``None`` rate;
+    summing it in masks the incoherence behind a plausible-but-wrong overall from the coherent
+    partition alone. Mirrors ``order_agree_rate._combined`` (#1426) and the sibling fixes in
+    scored_fraction (#1274), skip_share (#1272), and dual_order_coverage (#1280).
+    """
+    slices = (tuned, held_out)
+    if not all(s.get("challenger_rate") is not None for s in slices):
+        return dict(_NONE_SLICE)
+    return _rates(
+        tuned["challenger"] + held_out["challenger"],
+        tuned["baseline"] + held_out["baseline"],
+        tuned["tie"] + held_out["tie"],
+    )
+
+
 def summarize_win_rate(artifact) -> dict:
     """Return win-rate summary for a replay ``artifact``.
 
@@ -107,15 +126,7 @@ def summarize_win_rate(artifact) -> dict:
     if kind == "generalization":
         tuned = _slice_summary(artifact.get("tuned"))
         held = _slice_summary(artifact.get("held_out"))
-        if all(_is_int(slice_["total"]) for slice_ in (tuned, held)):
-            overall = _rates(
-                tuned["challenger"] + held["challenger"],
-                tuned["baseline"] + held["baseline"],
-                tuned["tie"] + held["tie"],
-            )
-        else:
-            overall = dict(_NONE_SLICE)
-        return {"kind": kind, **overall, "partitions": {"tuned": tuned, "held_out": held}}
+        return {"kind": kind, **_combined(tuned, held), "partitions": {"tuned": tuned, "held_out": held}}
     summary = {"kind": kind, **_slice_summary(artifact)}
     summary["partitions"] = None
     return summary

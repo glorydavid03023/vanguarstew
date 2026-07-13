@@ -79,6 +79,57 @@ def test_to_leaderboard_entry_shape_and_values():
     assert entry["private"]["composite_delta"] == combined["private"]["composite_deltas"]["composite_mean"]
 
 
+def test_to_leaderboard_entry_generalization_delta_matches_band():
+    # A --generalization score carries composite_deltas as {tuned, held_out} (no composite_mean, as
+    # score_pr_delta builds it). The published delta must be the MINIMUM of the partitions -- the
+    # value the band was derived from -- so band and delta never contradict. Previously the entry
+    # published band="perf:m" with composite_delta=null.
+    combined = {
+        "band": "perf:m", "label": "perf:m",
+        "public": {"composite_deltas": {"tuned": 0.10, "held_out": 0.08}},
+        "private": {"composite_deltas": {"tuned": 0.04, "held_out": 0.04}},
+    }
+    entry = to_leaderboard_entry(combined, pr_number=1, timestamp="t")
+    assert entry["public"]["composite_delta"] == 0.08     # min(0.10, 0.08); was None before the fix
+    assert entry["private"]["composite_delta"] == 0.04
+
+
+def test_to_leaderboard_entry_generalization_end_to_end_via_score_pr_delta():
+    # End-to-end reachability: real score_pr_delta on generalization artifacts feeds a combined
+    # report whose entry's delta is consistent with its band (not null).
+    def gen(t, h):
+        return {"tuned": {"composite_mean": t, "scored_repos": 3},
+                "held_out": {"composite_mean": h, "scored_repos": 3},
+                "generalization_gap": round(t - h, 3)}
+    pub = score_pr_delta(gen(0.60, 0.58), gen(0.70, 0.66))
+    prv = score_pr_delta(gen(0.60, 0.58), gen(0.64, 0.62))
+    combined = combine_dual_target(pub, prv)
+    entry = to_leaderboard_entry(combined, pr_number=1, timestamp="t")
+    if "composite_mean" not in (pub.get("composite_deltas") or {}):   # only if it took the gen shape
+        assert entry["public"]["composite_delta"] is not None
+        assert entry["band"] is not None
+
+
+def test_to_leaderboard_entry_generalization_ignores_non_numeric_partition():
+    combined = {
+        "band": "perf:s", "label": "perf:s",
+        "public": {"composite_deltas": {"tuned": 0.05, "held_out": None}},
+        "private": {"composite_deltas": {"tuned": "x", "held_out": 0.02}},
+    }
+    entry = to_leaderboard_entry(combined, pr_number=1, timestamp="t")
+    assert entry["public"]["composite_delta"] == 0.05
+    assert entry["private"]["composite_delta"] == 0.02
+
+
+def test_to_leaderboard_entry_no_usable_composite_deltas_is_none():
+    for bad in ({"composite_deltas": {}}, {"composite_deltas": "nope"},
+                {"composite_deltas": {"tuned": None}}, {}):
+        entry = to_leaderboard_entry({"band": "none", "public": bad, "private": bad},
+                                     pr_number=1, timestamp="t")
+        assert entry["public"]["composite_delta"] is None
+        assert entry["private"]["composite_delta"] is None
+
+
 def test_to_leaderboard_entry_defaults_timestamp_to_now():
     combined = _real_combined_report()
     entry = to_leaderboard_entry(combined, pr_number=1)
@@ -216,6 +267,32 @@ def test_to_anchor_entry_reads_composite_mean_directly_off_each_artifact():
         "public_score": 0.717,
         "private_score": 0.644,
     }
+
+
+def test_to_anchor_entry_masks_unscored_placeholder_score():
+    # An anchor that scored no repos reports scored_repos==0 with a placeholder composite_mean of
+    # 0.0. Publishing that as a real 0.0 base score is a fabricated perfect-zero; mask it to None,
+    # mirroring compare_eval._is_scored_unavailable / run_eval._is_unscored_placeholder.
+    unscored = {"composite_mean": 0.0, "repos": 3, "scored_repos": 0}
+    entry = to_anchor_entry("v0.5.0", unscored, unscored, timestamp="t")
+    assert entry["public_score"] is None
+    assert entry["private_score"] is None
+
+
+def test_to_anchor_entry_keeps_genuine_single_repo_zero():
+    # A single-repo anchor has no scored_repos key, so a genuine 0.0 composite is a real score and
+    # must be preserved (guard against over-masking).
+    entry = to_anchor_entry("v0.5.0", {"composite_mean": 0.0, "tasks": 5},
+                            {"composite_mean": 0.0, "tasks": 5}, timestamp="t")
+    assert entry["public_score"] == 0.0
+    assert entry["private_score"] == 0.0
+
+
+def test_to_anchor_entry_keeps_scored_multi_repo_score():
+    # A multi-repo anchor that DID score (scored_repos > 0) keeps its real composite_mean.
+    scored = {"composite_mean": 0.62, "repos": 3, "scored_repos": 3}
+    entry = to_anchor_entry("v0.5.0", scored, scored, timestamp="t")
+    assert entry["public_score"] == 0.62
 
 
 def test_to_anchor_entry_defaults_timestamp_to_now():

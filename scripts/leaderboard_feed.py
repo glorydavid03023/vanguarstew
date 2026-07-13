@@ -103,6 +103,25 @@ def _since_anchor_fields(since_anchor: dict | None) -> dict | None:
     }
 
 
+def _composite_delta(report) -> float | None:
+    """The banded composite delta for a target's report, for BOTH artifact shapes.
+
+    The standard shape carries ``composite_deltas["composite_mean"]``. A ``--generalization`` score
+    carries per-partition deltas ``{"tuned": ..., "held_out": ...}`` with no ``composite_mean`` key,
+    so reading only ``composite_mean`` published ``None`` there -- a feed entry whose delta
+    contradicted its own ``band``. In that case the delta is the MINIMUM of the present partition
+    deltas: the exact value ``score_pr_delta`` already derived the band from (a PR can't overfit the
+    tuned set and still band high), so the published delta can never contradict the published band.
+    Non-numeric partition values are ignored; ``None`` when nothing usable is present.
+    """
+    deltas = _dict(_dict(report).get("composite_deltas"))
+    if "composite_mean" in deltas:
+        return _round(deltas.get("composite_mean"))
+    present = [v for v in deltas.values()
+               if isinstance(v, (int, float)) and not isinstance(v, bool)]
+    return _round(min(present)) if present else None
+
+
 def to_leaderboard_entry(
     combined: dict, pr_number: int, timestamp: str | None = None, since_anchor: dict | None = None,
 ) -> dict:
@@ -127,17 +146,34 @@ def to_leaderboard_entry(
         "band": combined.get("band"),
         "label": combined.get("label"),
         "public": {
-            "composite_delta": _round(_dict(public.get("composite_deltas")).get("composite_mean")),
+            "composite_delta": _composite_delta(public),
             "per_repo": _safe_per_repo(public),
         },
         "private": {
-            "composite_delta": _round(_dict(private.get("composite_deltas")).get("composite_mean")),
+            "composite_delta": _composite_delta(private),
         },
     }
     fields = _since_anchor_fields(since_anchor)
     if fields is not None:
         entry["since_anchor"] = fields
     return entry
+
+
+def _anchor_score(artifact) -> float | None:
+    """The anchor's absolute composite score, masking the unscored placeholder.
+
+    An anchor run that scored no repos reports ``scored_repos == 0`` with a placeholder
+    ``composite_mean`` of ``0.0`` (a mean over an empty list). Publishing that as the anchor's real
+    baseline would paint a fabricated perfect-zero base bar, so it is masked to ``None`` -- mirroring
+    ``compare_eval._is_scored_unavailable`` / ``run_eval._is_unscored_placeholder``, which guard the
+    same placeholder everywhere else ``composite_mean`` is read. A single-repo anchor carries no
+    ``scored_repos`` key, so a genuine ``0.0`` is preserved.
+    """
+    artifact = _dict(artifact)
+    scored = artifact.get("scored_repos")
+    if isinstance(scored, (int, float)) and not isinstance(scored, bool) and scored == 0:
+        return None
+    return _round(artifact.get("composite_mean"))
 
 
 def to_anchor_entry(
@@ -159,8 +195,8 @@ def to_anchor_entry(
     return {
         "anchor": anchor_name,
         "timestamp": timestamp or datetime.datetime.now(datetime.timezone.utc).isoformat(),
-        "public_score": _round(_dict(public_artifact).get("composite_mean")),
-        "private_score": _round(_dict(private_artifact).get("composite_mean")),
+        "public_score": _anchor_score(public_artifact),
+        "private_score": _anchor_score(private_artifact),
     }
 
 

@@ -207,8 +207,31 @@ def test_generalization_malformed_partition_tally_yields_none_overall():
 def test_generalization_zero_total_yields_none_rates():
     out = summarize_win_rate(_gen({"challenger": 0, "baseline": 0, "tie": 0},
                                   {"challenger": 0, "baseline": 0, "tie": 0}))
-    assert out["total"] == 0
+    assert out["partitions"]["tuned"]["total"] == 0
+    assert out["partitions"]["held_out"]["total"] == 0
+    assert out["total"] is None
     assert out["challenger_rate"] is None
+
+
+def test_generalization_overall_null_when_a_partition_has_zero_tasks():
+    # A zero-task slice has integer (all-zero) counts but no defined challenger_rate; it must not
+    # be summed into a plausible-but-wrong overall from the other partition alone -- the overall is
+    # None, mirroring order_agree_rate (#1426), scored_fraction (#1274), skip_share (#1272), and
+    # dual_order_coverage (#1280). The coherent partition's own rate is still reported under
+    # ``partitions`` (#1496).
+    art = {
+        "generalization_gap": 0.0,
+        "tuned": {"tally": {"challenger": 0, "baseline": 0, "tie": 0}},
+        "held_out": {"tally": {"challenger": 6, "baseline": 3, "tie": 1}},
+    }
+    out = summarize_win_rate(art)
+    assert out["partitions"]["tuned"]["total"] == 0
+    assert out["partitions"]["tuned"]["challenger_rate"] is None
+    assert out["partitions"]["held_out"]["challenger_rate"] == 0.6
+    assert out["total"] is None
+    assert out["challenger"] is None
+    assert out["challenger_rate"] is None
+    assert win_rate_headline(out) == "win rate: no tally available"
 
 
 @pytest.fixture
