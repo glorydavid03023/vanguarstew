@@ -4,6 +4,9 @@
 number for trending. ``summarize_composite_spread`` reads ``composite_parts`` from the headline
 partition (top level, or ``tuned`` for generalization) and reports ``judge_mean - objective_mean``.
 
+A partition that scored no repos (``scored_repos == 0``) carries placeholder ``0.0`` means rather
+than real ones, so its means and ``spread`` are reported as ``None`` — never as a balanced ``0.0``.
+
 Pure analysis: no I/O, never mutates its input, and missing parts yield ``None`` rather than raising.
 """
 
@@ -47,14 +50,33 @@ def _headline_partition(artifact: dict) -> dict:
     return artifact
 
 
+def _scored(partition: dict) -> bool:
+    """False when the partition scored no repos, so its component means are placeholders.
+
+    A multi-repo run that scored no repos reports ``scored_repos == 0`` with placeholder ``0.0``
+    means (averages over empty lists) — an infra/transient outcome, not the agent actually scoring
+    zero. Reading that placeholder as a real score reports a confident, perfectly balanced
+    ``judge 0.0 vs objective 0.0 (delta +0.000)`` for a run that measured nothing. Mirrors
+    :func:`benchmark.component_floor._scored_metric` and :func:`benchmark.promotion._scored_composite`,
+    which apply the same ``scored_repos`` guard to the same placeholder. A single-repo run carries no
+    ``scored_repos`` key and keeps its real means (including a genuine ``0.0`` from a run that
+    actually scored).
+    """
+    scored = partition.get("scored_repos")
+    return not (_is_number(scored) and not scored)
+
+
 def _headline_parts(artifact: dict) -> dict:
-    parts = _headline_partition(artifact).get("composite_parts")
+    partition = _headline_partition(artifact)
+    parts = partition.get("composite_parts")
     if not isinstance(parts, dict):
         if parts is not None:
             logger.warning(
                 "composite_spread: composite_parts is %s, not an object; treating as empty",
                 type(parts).__name__,
             )
+        return {"judge_mean": None, "objective_mean": None}
+    if not _scored(partition):
         return {"judge_mean": None, "objective_mean": None}
     return {
         "judge_mean": _round3(parts.get("judge_mean")),

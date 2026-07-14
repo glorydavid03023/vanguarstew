@@ -47,11 +47,24 @@ objective means as a single number for trending. `summarize_composite_spread` re
   `tuned`.
 - OTHERWISE it SHALL return the top-level artifact dict.
 
+### Scored partition (`_scored`)
+
+- WHEN the headline partition's `scored_repos` passes `_is_number` and is `0` THEN `_scored` SHALL
+  return `False`.
+- OTHERWISE it SHALL return `True` — including when `scored_repos` is absent (a single-repo run
+  carries no such key) or non-numeric (e.g. a boolean, which `_is_number` rejects).
+
 ### Composite parts (`_headline_parts`)
 
 - SHALL read `judge_mean` and `objective_mean` from `composite_parts` when that value is a `dict`.
 - WHEN `composite_parts` is missing or not a `dict` THEN both means SHALL be `None` (with a warning
   when non-`None` and non-dict).
+- WHEN the headline partition is not `_scored` THEN both means SHALL be `None`. A run that scored no
+  repos reports `scored_repos == 0` with placeholder `0.0` means (averages over empty lists), which
+  are an infra/transient outcome rather than the agent scoring zero; reporting them would yield a
+  confident, perfectly balanced `delta +0.000` for a run that measured nothing. This mirrors the
+  `scored_repos` guard `benchmark.component_floor._scored_metric` and
+  `benchmark.promotion._scored_composite` already apply to the same placeholder.
 
 ### Composite spread summary (`summarize_composite_spread`)
 

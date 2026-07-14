@@ -46,6 +46,73 @@ def test_missing_parts_yield_none_spread():
     assert out["spread"] is None
 
 
+# --- the scored_repos guard: a run that scored nothing has no spread ------------------------------
+
+def _unscored_multi():
+    # run_multi_replay: every repo too small for the horizon -> scored_repos 0 and composite_parts
+    # that are averages over empty lists (placeholder 0.0), not real means.
+    return {
+        "repos": 2, "scored_repos": 0, "skipped": 2, "composite_mean": 0.0,
+        "composite_parts": {"judge_mean": 0.0, "objective_mean": 0.0},
+        "per_repo": [
+            {"repo": "o/a", "tasks": 0, "composite_mean": 0.0},
+            {"repo": "o/b", "tasks": 0, "composite_mean": 0.0},
+        ],
+    }
+
+
+def test_unscored_multi_run_has_no_means_or_spread():
+    # Reading the placeholder as a real score reports a confident, perfectly balanced
+    # "judge 0.0 vs objective 0.0 (delta +0.000)" for a run that measured nothing.
+    out = summarize_composite_spread(_unscored_multi())
+    assert out["kind"] == "multi"
+    assert out["judge_mean"] is None
+    assert out["objective_mean"] is None
+    assert out["spread"] is None
+    assert "n/a" in composite_spread_headline(out)
+
+
+def test_scored_multi_run_keeps_its_means():
+    # The guard fires only on scored_repos == 0; a run that scored is untouched.
+    art = _unscored_multi()
+    art.update(scored_repos=2, skipped=0,
+               composite_parts={"judge_mean": 0.7, "objective_mean": 0.5})
+    out = summarize_composite_spread(art)
+    assert (out["judge_mean"], out["objective_mean"], out["spread"]) == (0.7, 0.5, 0.2)
+
+
+def test_single_repo_zero_means_are_real_and_kept():
+    # A single-repo run carries no scored_repos key, so a genuine 0.0 from a run that actually
+    # scored must survive -- the guard must not swallow it.
+    out = summarize_composite_spread({"tasks": 5, "composite_parts":
+                                      {"judge_mean": 0.0, "objective_mean": 0.0}})
+    assert (out["judge_mean"], out["objective_mean"], out["spread"]) == (0.0, 0.0, 0.0)
+
+
+def test_generalization_unscored_tuned_partition_has_no_spread():
+    # The headline partition is `tuned`; when it scored nothing its placeholder means must not
+    # become a spread, even though held_out scored fine.
+    out = summarize_composite_spread({
+        "generalization_gap": 0.0,
+        "tuned": {"scored_repos": 0, "per_repo": [],
+                  "composite_parts": {"judge_mean": 0.0, "objective_mean": 0.0}},
+        "held_out": {"scored_repos": 1, "per_repo": [{"repo": "o/b", "tasks": 4}],
+                     "composite_parts": {"judge_mean": 0.6, "objective_mean": 0.4}},
+    })
+    assert out["kind"] == "generalization"
+    assert out["spread"] is None
+
+
+def test_boolean_scored_repos_is_not_coerced_to_zero():
+    # `False` is not a numeric 0 (mirrors _is_number rejecting bool), so a malformed scored_repos
+    # does not silently blank out real means.
+    out = summarize_composite_spread({
+        "scored_repos": False,
+        "composite_parts": {"judge_mean": 0.3, "objective_mean": 0.2},
+    })
+    assert out["spread"] == 0.1
+
+
 def test_malformed_parts_yield_none_spread():
     out = summarize_composite_spread({"composite_mean": 0.5, "composite_parts": 42})
     assert out["spread"] is None

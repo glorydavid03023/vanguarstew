@@ -19,6 +19,16 @@ All notable changes to this project are documented here. The format is based on
   and the gap is reported only when both partitions scored a repo (#208).
 
 ### Fixed
+- Benchmark reporting (`benchmark/composite_spread.py`): a run that **scored no repos** was reported
+  as a perfectly balanced one. `run_multi_replay` emits `scored_repos == 0` with placeholder `0.0`
+  `composite_parts` means (averages over empty lists) — an infra/transient outcome, not the agent
+  scoring zero — and `_headline_parts` read them as real, reporting
+  `composite spread: judge 0.0 vs objective 0.0 (delta +0.000)` for a run that measured nothing, so a
+  dashboard trending the spread saw a healthy, confident datapoint. A `_scored` guard now yields
+  `None` means (and an `n/a` spread) for an unscored partition, mirroring the `scored_repos` guard
+  `component_floor._scored_metric` and `promotion._scored_composite` already apply to the same
+  placeholder. A single-repo run carries no `scored_repos` key and keeps its genuine `0.0`; Spec 048
+  is updated to match (#1630).
 - Benchmark gates (`benchmark/judge_gate.py`, `benchmark/regression.py`): the order-disagreement
   recompute accepted an incoherent telemetry block where `disagree > dual_order_tasks` — impossible,
   since `disagree` is a subset of `dual_order_tasks` (stale/hand-edited data). It produced a rate

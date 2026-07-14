@@ -19,6 +19,7 @@ from benchmark.composite_spread import (  # noqa: E402
     _headline_parts,
     _is_number,
     _round3,
+    _scored,
     composite_spread_headline,
     summarize_composite_spread,
 )
@@ -31,6 +32,49 @@ def _single(judge, objective):
         "composite_mean": 0.6,
         "composite_parts": {"judge_mean": judge, "objective_mean": objective},
     }
+
+
+# --- Scored partition (`_scored`) ------------------------------------------------------------
+
+
+def test_scored_is_false_only_for_a_numeric_zero_scored_repos():
+    assert _scored({"scored_repos": 0}) is False
+    assert _scored({"scored_repos": 0.0}) is False
+
+
+@pytest.mark.parametrize("partition", (
+    {},                          # absent: a single-repo run carries no scored_repos key
+    {"scored_repos": 1},
+    {"scored_repos": 2},
+    {"scored_repos": False},     # bool is not numeric (_is_number rejects it)
+    {"scored_repos": "0"},       # non-numeric
+    {"scored_repos": None},
+))
+def test_scored_is_true_when_absent_non_numeric_or_positive(partition):
+    assert _scored(partition) is True
+
+
+def test_unscored_partition_yields_none_means():
+    # scored_repos == 0 => composite_parts are placeholder 0.0 averages over empty lists, not real
+    # means; reporting them fabricates a balanced `delta +0.000` for a run that measured nothing.
+    parts = _headline_parts({"scored_repos": 0,
+                             "composite_parts": {"judge_mean": 0.0, "objective_mean": 0.0}})
+    assert parts == {"judge_mean": None, "objective_mean": None}
+
+
+def test_unscored_run_summary_has_none_spread_and_na_headline():
+    out = summarize_composite_spread({
+        "repos": 1, "scored_repos": 0, "skipped": 1, "per_repo": [{"repo": "o/a", "tasks": 0}],
+        "composite_parts": {"judge_mean": 0.0, "objective_mean": 0.0},
+    })
+    assert out["judge_mean"] is None and out["objective_mean"] is None
+    assert out["spread"] is None
+    assert "n/a" in composite_spread_headline(out)
+
+
+def test_single_repo_genuine_zero_means_survive_the_guard():
+    # No scored_repos key => a real 0.0 from a run that actually scored is preserved.
+    assert _headline_parts(_single(0.0, 0.0)) == {"judge_mean": 0.0, "objective_mean": 0.0}
 
 
 # --- Input coercion -------------------------------------------------------------------------
