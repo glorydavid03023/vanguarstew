@@ -65,20 +65,64 @@ def test_empty_per_repo_has_no_scores():
 
 
 def test_missing_and_non_numeric_scores_skipped():
+    # Every entry is a *scored* repo (tasks > 0), as a real run_multi_replay row is, so this
+    # exercises the composite_mean guard alone.
     artifact = {
         "per_repo": [
-            {"tasks": 1},                       # no composite_mean
-            {"composite_mean": "x"},            # non-numeric
-            {"composite_mean": True},           # bool, not coerced
-            {"composite_mean": float("nan")},   # non-finite
-            "nope",                             # non-dict entry
+            {"tasks": 1},                                  # no composite_mean
+            {"tasks": 1, "composite_mean": "x"},           # non-numeric
+            {"tasks": 1, "composite_mean": True},          # bool, not coerced
+            {"tasks": 1, "composite_mean": float("nan")},  # non-finite
+            "nope",                                        # non-dict entry
             5,
-            {"composite_mean": 0.5},            # the only usable score
+            {"tasks": 3, "composite_mean": 0.5},           # the only usable score
         ],
     }
     summary = summarize_repo_score_spread(artifact)
     assert summary["scored_repos"] == 1
     assert summary["min"] == summary["max"] == 0.5
+
+
+def test_zero_task_repo_placeholder_is_not_a_score():
+    # A repo too small for the horizon is kept in per_repo with tasks == 0 and a *placeholder*
+    # composite_mean of 0.0. Counting it fabricates a phantom min of 0.0 and a maximal range —
+    # exactly the "carried by one repo" false alarm this module exists to detect. Every sibling
+    # per-repo consumer gates on tasks > 0 (aggregate_integrity, weight_integrity, coverage, ...).
+    summary = summarize_repo_score_spread({
+        "repos": 2, "scored_repos": 1, "skipped": 1, "composite_mean": 0.6,
+        "per_repo": [
+            {"repo": "owner/scored", "tasks": 3, "composite_mean": 0.6},
+            {"repo": "owner/too-small", "tasks": 0, "composite_mean": 0.0},   # placeholder
+        ],
+    })
+    assert summary["scored_repos"] == 1                    # matches the artifact's own scored_repos
+    assert summary["min"] == summary["max"] == 0.6
+    assert summary["range"] == 0.0                         # a single scored repo has no spread
+    assert "across 1 repo(s)" in repo_score_spread_headline(summary)
+
+
+def test_all_repos_skipped_reports_no_scored_repos():
+    summary = summarize_repo_score_spread({
+        "repos": 1, "scored_repos": 0, "skipped": 1, "composite_mean": 0.0,
+        "per_repo": [{"repo": "owner/too-small", "tasks": 0, "composite_mean": 0.0}],
+    })
+    assert summary["scored_repos"] == 0
+    assert summary["min"] is None and summary["max"] is None and summary["range"] is None
+    assert repo_score_spread_headline(summary) == "repo score spread: no scored repos"
+
+
+def test_generalization_excludes_zero_task_repos_per_partition():
+    summary = summarize_repo_score_spread({
+        "generalization_gap": 0.05,
+        "tuned": {"per_repo": [{"tasks": 3, "composite_mean": 0.6},
+                               {"tasks": 0, "composite_mean": 0.0}]},   # skipped
+        "held_out": {"per_repo": [{"tasks": 2, "composite_mean": 0.55}]},
+    })
+    assert summary["scored_repos"] == 2                    # 1 tuned + 1 held_out (skipped dropped)
+    assert summary["min"] == 0.55 and summary["max"] == 0.6
+    assert summary["range"] == 0.05
+    assert summary["partitions"]["tuned"]["scored_repos"] == 1
+    assert summary["partitions"]["tuned"]["range"] == 0.0
 
 
 # --- generalization ------------------------------------------------------------------------------

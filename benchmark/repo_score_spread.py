@@ -45,12 +45,28 @@ def _is_number(value) -> bool:
         return False
 
 
+def _scored_repo(entry: dict) -> bool:
+    """True when a per-repo entry actually produced tasks.
+
+    A repo too small for the horizon yields ``tasks == 0`` and a **placeholder**
+    ``composite_mean`` of ``0.0`` (the ``_mean([])`` default), and ``run_multi_replay``
+    deliberately keeps that row in ``per_repo`` while excluding it from the aggregate
+    (``if res.get("tasks", 0) > 0``). Every sibling per-repo consumer gates on ``tasks > 0``
+    — ``aggregate_integrity``, ``weight_integrity``, ``coverage``, ``repo_task_mean``,
+    ``partition_task_share``, ``tally_integrity``, ``row_integrity`` — so the placeholder is
+    never read as a genuine score.
+    """
+    tasks = entry.get("tasks")
+    return _is_number(tasks) and int(tasks) > 0
+
+
 def _repo_scores(slice_) -> list[float]:
     """The per-repo ``composite_mean`` values of one slice, each rounded to 3 dp.
 
-    A multi-repo slice contributes one score per scored ``per_repo`` entry that carries a numeric
-    ``composite_mean``; a single-repo slice contributes its own top-level ``composite_mean``. Empty
-    ``per_repo``, non-dict entries, and entries missing/with a non-numeric ``composite_mean`` are
+    A multi-repo slice contributes one score per **scored** ``per_repo`` entry — one that produced
+    tasks (``tasks > 0``) *and* carries a numeric ``composite_mean``; a single-repo slice
+    contributes its own top-level ``composite_mean``. Empty ``per_repo``, non-dict entries,
+    zero-task (skipped) repos, and entries missing/with a non-numeric ``composite_mean`` are
     skipped.
     """
     slice_ = _dict(slice_)
@@ -58,7 +74,8 @@ def _repo_scores(slice_) -> list[float]:
     if isinstance(per_repo, list):
         scores = []
         for entry in per_repo:
-            if isinstance(entry, dict) and _is_number(entry.get("composite_mean")):
+            if (isinstance(entry, dict) and _scored_repo(entry)
+                    and _is_number(entry.get("composite_mean"))):
                 scores.append(round(float(entry["composite_mean"]), 3))
         return scores
     top = slice_.get("composite_mean")

@@ -19,6 +19,15 @@ All notable changes to this project are documented here. The format is based on
   and the gap is reported only when both partitions scored a repo (#208).
 
 ### Fixed
+- Repo score spread (`benchmark/repo_score_spread.py`): a **skipped (zero-task) repo's placeholder
+  `composite_mean` of `0.0` was counted as a real score**. `run_multi_replay` keeps a repo too small
+  for the horizon in `per_repo` with `tasks == 0` and a `_mean([])` default of `0.0`, and excludes it
+  from the aggregate (`if res.get("tasks", 0) > 0`); `_repo_scores` read that placeholder as a
+  genuine score, fabricating a phantom `min` of `0.0` and a maximal `range` — the exact "carried by
+  one repo" false alarm the module exists to detect — and reporting a `scored_repos` that disagreed
+  with the artifact's own. `_repo_scores` now gates on `tasks > 0` via a `_scored_repo` helper
+  mirroring `weight_integrity`, so the placeholder is never read as a score; the `--generalization`
+  path inherits the gate per partition (#1628).
 - Benchmark gates (`benchmark/judge_gate.py`, `benchmark/regression.py`): the order-disagreement
   recompute accepted an incoherent telemetry block where `disagree > dual_order_tasks` — impossible,
   since `disagree` is a subset of `dual_order_tasks` (stale/hand-edited data). It produced a rate
