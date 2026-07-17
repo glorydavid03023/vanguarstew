@@ -172,6 +172,38 @@ def test_decide_survives_non_string_action_field():
     assert out["rationale"] == "needs a regression test"
 
 
+class _RejectingLLM:
+    offline = False
+
+    def chat_json(self, system, user, stub=None):
+        return {
+            "action": "reject",
+            "labels": [],
+            "reviewer": None,
+            "version_bump": None,
+            "patch": None,
+            "rationale": "out of scope: this repo only accepts code changes",
+        }
+
+
+def test_planning_request_is_never_rejected_as_out_of_scope():
+    # #1562: the identical planning request returned "plan" on one repo and "reject" on another
+    # (the LLM read a repo's "only merges code changes" philosophy as grounds to reject the
+    # planning request itself). A planning request asks for a plan; it is never a contribution to
+    # reject, so a "reject" verdict is coerced back to "plan".
+    out = decide({}, {}, "plan the next 5 maintainer actions", _RejectingLLM())
+    assert out["action"] == "plan"
+    # the other fields are untouched by the coercion
+    assert "out of scope" in out["rationale"]
+
+
+def test_non_planning_request_may_still_be_rejected():
+    # The coercion is scoped to planning requests only — a real reject verdict on a concrete
+    # contribution review must survive.
+    out = decide({}, {}, "review PR #42", _RejectingLLM())
+    assert out["action"] == "reject"
+
+
 def test_normalize_version_bump_accepts_canonical_levels():
     for level in ("major", "minor", "patch"):
         assert _normalize_version_bump(level) == level
@@ -292,16 +324,41 @@ def test_decide_offline_runs_lenses_without_network_and_keeps_stub_shape():
     }
 
 
-def test_release_context_note_surfaces_frozen_tags():
-    note = _release_context_note({"releases": [{"tag": "v2.1.0"}, {"tag": "v2.0.3"}]})
+def test_release_context_note_surfaces_highest_frozen_tag():
+    # Highest semver among frozen releases, regardless of list order (git is oldest-first;
+    # the GitHub path is newest-first — see #1635).
+    note = _release_context_note({"releases": [{"tag": "v2.0.3"}, {"tag": "v2.1.0"}]})
     assert "v2.1.0" in note
     assert "version_bump" in note
+    assert "newest first" not in note.lower()
+
+
+def test_release_context_note_uses_anchor_base_not_list_head():
+    # Git builders store releases oldest-first; slicing [:3] previously labeled the three
+    # OLDEST tags "newest first", pointing version_bump at a stale base (e.g. 0.13.0 when
+    # the objective anchor's base_from_releases is 1.6.0).
+    releases = [
+        {"tag": "0.13.0"},
+        {"tag": "0.13.1"},
+        {"tag": "1.0.0.dev0"},
+        {"tag": "1.5.0"},
+        {"tag": "1.6.0"},
+    ]
+    note = _release_context_note({"releases": releases})
+    assert "1.6.0" in note
+    assert "0.13.0" not in note
+    assert "0.13.1" not in note
+    # Newest-first order (GitHub API path) must resolve to the same base.
+    note_rev = _release_context_note({"releases": list(reversed(releases))})
+    assert "1.6.0" in note_rev
+    assert "0.13.0" not in note_rev
 
 
 def test_release_context_note_empty_when_no_releases():
     assert _release_context_note({}) == ""
     assert _release_context_note({"releases": []}) == ""
     assert _release_context_note({"releases": [{"tag": ""}]}) == ""
+    assert _release_context_note({"releases": [{"tag": "nightly"}]}) == ""  # no parseable semver
 
 
 def test_is_planning_request():
